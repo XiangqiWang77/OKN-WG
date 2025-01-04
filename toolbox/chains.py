@@ -14,7 +14,7 @@ import json
 #load_dotenv()
 
 # OpenAI API 配置
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = "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"
 client = OpenAI(api_key=api_key)
 
 # Neo4j 数据库配置

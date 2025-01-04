@@ -22,7 +22,7 @@ NEO4J_PASSWORD="RPW_MYabUDgsJzTrqDJLgDA2UzNrXC_rXYOLdP10tls"
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 # OpenAI 配置
-api_key = os.getenv("OPENAI_API_KEY", "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")
+api_key = "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"
 client = OpenAI(api_key=api_key)
 
 # 加载 aspect 分类的 JSON 数据
