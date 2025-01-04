@@ -13,12 +13,12 @@ from toolbox.aspects import generate_aspect_chain, extract_keywords_from_questio
 from toolbox.web_agent import web_search_agent, infer_node_scope_from_question 
 
 # 加载环境变量
-load_dotenv(".env")
+#load_dotenv(".env")
 
 # Neo4j 数据库配置
-NEO4J_URI = os.getenv("NEO4J_URL")
-NEO4J_USER = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+NEO4J_URI="neo4j+s://f40686c2.databases.neo4j.io"
+NEO4J_USER="neo4j"
+NEO4J_PASSWORD="RPW_MYabUDgsJzTrqDJLgDA2UzNrXC_rXYOLdP10tls"
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 # OpenAI 配置

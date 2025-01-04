@@ -11,7 +11,7 @@ from sentence_transformers import SentenceTransformer
 import json
 
 # 加载环境变量
-load_dotenv()
+#load_dotenv()
 
 # OpenAI API 配置
 api_key = os.getenv("OPENAI_API_KEY")

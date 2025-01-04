@@ -11,7 +11,7 @@ import re
 from toolbox.aspects import send_openai_prompt
 
 # 加载环境变量
-load_dotenv()
+#load_dotenv()
 
 # Neo4j 配置
 NEO4J_URI="neo4j+s://f40686c2.databases.neo4j.io"

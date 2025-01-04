@@ -11,7 +11,7 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 
 # 加载环境变量
-load_dotenv()
+#load_dotenv()
 
 # OpenAI 配置
 api_key = os.getenv("OPENAI_API_KEY")

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import traceback
 from PIL import Image
 import torchvision.transforms as transforms
-load_dotenv()
+#load_dotenv()
 import base64,io
 import requests
 from bs4 import BeautifulSoup
