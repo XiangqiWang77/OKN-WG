@@ -1,0 +1,36 @@
+{
+    "question_categories": [
+      {
+        "category": "Animal Observations and Distribution",
+        "questions": [
+          "What reptiles live in Alachua?"
+        ]
+      },
+      {
+        "category": "Relationships and Interactions Between Animals",
+        "questions": [
+          "What birds feed on what amphibians in Florida?"
+        ]
+      },
+      {
+        "category": "Animal Images and Media Resources",
+        "questions": [
+          "What reptiles are brown in Alachua?"
+        ]
+      },
+      {
+        "category": "Conservation Status and Ecological Threats",
+        "questions": [
+          "What birds are threatened in Alachua?"
+        ]
+      },
+      {
+        "category": "Time and Trend Analysis",
+        "questions": [
+          "What's the trend of animals in Alachua from 2000 to 2024, ascending or descending?",
+          "What reptiles are observed three times in Alachua?"
+        ]
+      }
+    ]
+  }
+  
