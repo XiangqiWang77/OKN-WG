@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 #load_dotenv()
 
 # OpenAI 配置
-api_key = "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"
+api_key = "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"
 client = OpenAI(api_key=api_key)
 
 # Neo4j 数据库配置
