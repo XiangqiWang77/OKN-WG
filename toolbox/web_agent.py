@@ -62,21 +62,23 @@ def fetch_wikidata_ids_from_neo4j(node_scope):
 
 
 
+import requests
+from bs4 import BeautifulSoup
+import time
+
+
 # 4. 爬取Wikidata网页内容
 def retrieve_content(url):
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
     try:
-        driver.get(url)
-        time.sleep(2)
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # 如果返回状态码不是200，将触发异常
+        soup = BeautifulSoup(response.text, 'html.parser')
         paragraphs = soup.find_all('p')
         content = ' '.join([para.get_text() for para in paragraphs])
         return content
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print(f"Failed to retrieve content from {url}: {e}")
         return None
-    finally:
-        driver.quit()
 
 
 # 5. 判断答案是否存在
@@ -89,15 +91,18 @@ def judgement(question, content):
 
 # 6. 提取更多相关链接
 def extract_top_k_links(weburl, topK):
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-    driver.get(weburl)
-    time.sleep(3)
+    try:
+        response = requests.get(weburl, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = soup.find_all('a', href=True)
 
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-    links = soup.find_all('a', href=True)
-
-    relevant_links = [link['href'] for link in links][:topK]
-    return relevant_links
+        # 过滤出以 http 开头的链接，避免无效链接
+        relevant_links = [link['href'] for link in links if link['href'].startswith('http')][:topK]
+        return relevant_links
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to extract links from {weburl}: {e}")
+        return []
 
 
 # 7. Web搜索代理主函数
@@ -118,8 +123,5 @@ def web_search_agent(llm, question, node_scope=""):
         if content:
             all_content.append(content)
 
-
     print(all_content)
-
     return all_content
-
