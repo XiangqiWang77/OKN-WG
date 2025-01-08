@@ -101,8 +101,8 @@ def handle_chat_mode(name, user_input):
     result = None
 
     if name[0] == "RAG Disabled":
-        output_function = configure_llm_only_chain(llm)
-        result = output_function({"question": user_input})["answer"]
+        result = configure_llm_only_chain(user_input)
+        #result = output_function({"question": user_input})["answer"]
 
     elif name[0] == "LLM Translator RAG":
         translate_function = prompt_cypher(llm)  # 获取生成函数
