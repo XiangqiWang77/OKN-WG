@@ -86,11 +86,11 @@ def chat_input():
 
 # RAG模式选择
 def mode_select() -> list:
-    options = ["RAG Disabled", "LLM Translator RAG", "Aspects Matching RAG", "Wikidata Agent"]
-    multimediaoptions = ["Multimedia Disabled", "Multimedia Enabled"]
+    options = ["Regular Response", "AI as Translator to KN-Wildlife", "AI as Toolbox for Aspect-Based Question", "AI as a Online(Wikidata) Searching Agent"]
+    multimediaoptions = ["Text Only", "Text and Images"]
 
-    selected_multimedia_mode = st.radio("Select multimedia mode", multimediaoptions, horizontal=True)
-    mode_selected = st.radio("Select RAG mode", options, horizontal=True)
+    selected_multimedia_mode = st.radio("Select output mode", multimediaoptions, horizontal=True)
+    mode_selected = st.radio("Select external sources", options, horizontal=True)
     
     return [mode_selected, selected_multimedia_mode]
 
@@ -100,17 +100,17 @@ def handle_chat_mode(name, user_input):
     print(name[0])
     result = None
 
-    if name[0] == "RAG Disabled":
+    if name[0] == "Regular Response":
         result = configure_llm_only_chain(user_input)
         #result = output_function({"question": user_input})["answer"]
 
-    elif name[0] == "LLM Translator RAG":
+    elif name[0] == "AI as Translator to KN-Wildlife":
         translate_function = prompt_cypher(llm)  # 获取生成函数
         temp_result = translate_function(user_input)  # 调用生成函数获取 Cypher 查询
 
         print(temp_result)  # 检查 Cypher 查询是否正确生成
 
-        if name[1] == "Multimedia Disabled":
+        if name[1] == "Text Only":
             rag_chain = configure_qa_rag_chain(
                 llm,  # 第一个参数传递 llm
                 query=temp_result,  # 传递生成的 Cypher 查询
@@ -120,7 +120,7 @@ def handle_chat_mode(name, user_input):
             )
             result = rag_chain
 
-        elif name[1] == "Multimedia Enabled":
+        elif name[1] == "Text and Images":
             # 执行图谱查询
             kg_output = query_neo4j(temp_result)
 
@@ -135,7 +135,7 @@ def handle_chat_mode(name, user_input):
                 display_images(feed_result["URLs"])
 
 
-    elif name[0] == "Aspects Matching RAG":
+    elif name[0] == "AI as Toolbox for Aspect-Based Question":
         aspect_category = classfic(user_input, json_data, llm)
         #keywords = extract_keywords_from_question(user_input)
         temp_chain = generate_aspect_chain(
@@ -152,7 +152,7 @@ def handle_chat_mode(name, user_input):
 
 
 
-    elif name[0] == "Wikidata Agent":
+    elif name[0] == "AI as a Online(Wikidata) Searching Agent":
         print("Function calling")
         
         # 通过 LLM 推断可能的节点范围
