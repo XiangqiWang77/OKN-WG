@@ -188,6 +188,8 @@ def generate_aspect_chain(question, multimedia_option, aspect, llm_name, vllm_na
 
     print(response)
 
+    print("kg_output", kg_output)
+
     # 步骤6：如果结果中包含多媒体 URL，进一步提取和展示
     if multi_option:
         if "http" in str(kg_output):
