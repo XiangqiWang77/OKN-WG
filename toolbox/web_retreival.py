@@ -2,9 +2,11 @@
 from neo4j import GraphDatabase
 
 # 设置Neo4j数据库连接
-NEO4J_URI="neo4j+s://f40686c2.databases.neo4j.io"
+# Neo4j 数据库配置
+import streamlit as st
+NEO4J_URI=st.secrets["NEO4J_URI"]
 NEO4J_USER="neo4j"
-NEO4J_PASSWORD="RPW_MYabUDgsJzTrqDJLgDA2UzNrXC_rXYOLdP10tls"
+NEO4J_PASSWORD=st.secrets["NEO4J_PASSWORD"]
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 import openai
 from openai import AzureOpenAI

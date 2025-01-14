@@ -19,9 +19,10 @@ api_key = st.secrets["OPENAI_KEY"]
 client = OpenAI(api_key=api_key)
 
 # Neo4j 数据库配置
-NEO4J_URI="neo4j+s://f40686c2.databases.neo4j.io"
+# Neo4j 数据库配置
+NEO4J_URI=st.secrets["NEO4J_URI"]
 NEO4J_USER="neo4j"
-NEO4J_PASSWORD="RPW_MYabUDgsJzTrqDJLgDA2UzNrXC_rXYOLdP10tls"
+NEO4J_PASSWORD=st.secrets["NEO4J_PASSWORD"]
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 # SentenceTransformer 嵌入模型
