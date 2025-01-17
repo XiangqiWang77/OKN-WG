@@ -376,7 +376,7 @@ def handle_chat_mode(name, user_input):
     return result
 
 import time
-from streamlit_modal import Modal  # 使用 `streamlit-modal` 插件实现弹出框
+#from streamlit_modal import Modal  # 使用 `streamlit-modal` 插件实现弹出框
 import threading
 def keep_neo4j_alive(interval=300):
     def query():
