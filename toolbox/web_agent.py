@@ -30,6 +30,10 @@ def infer_node_scope_from_question(llm, question):
     Question: {question}
 
     Return the final result only as plain text, like 'Reptile_name'. No explanation, no bullshit.
+
+    Answer with single plain text answer, like 'Reptile_name' and output this only.
+
+    You must select between the ones above and you must not say no.
     """
     response = send_openai_prompt(prompt)
     return response.strip()
