@@ -416,37 +416,35 @@ if "keep_alive_started" not in st.session_state:
 st.title("Wildlife Knowledge Assistant 🐾")
 st.write("A bot to assist you with wildlife knowledge and Neo4j-powered queries.")
 
-# 创建弹出框介绍功能
-def show_bot_introduction():
-    modal = Modal(key="introduction_modal", title="Meet Your Wildlife Knowledge Assistant!")
-    if modal.open:
-        with modal.container():
-            st.markdown("""
-            ### Welcome to Wildlife Knowledge Assistant 🐾
-            This bot is designed to help you:
-            - Query and visualize wildlife-related data using **Neo4j**.
-            - Ask complex questions and receive detailed answers powered by **LLM**.
-            - Explore multimedia (text and images) information related to your questions.
-            - Discover more about wildlife in the United States and beyond.
+# 图标和介绍逻辑
+if "show_intro" not in st.session_state:
+    st.session_state["show_intro"] = False
 
-            **Features**:
-            - **Interactive Modes**: Choose from various response modes (text-only, multimedia, etc.).
-            - **Custom AI Models**: Powered by GPT-based LLMs and integrated APIs for a rich experience.
-            - **Neo4j Database**: Provides real-time data querying and visualization.
+# 点击图标显示介绍信息
+if st.sidebar.button("ℹ️ What is this bot?"):
+    st.session_state["show_intro"] = not st.session_state["show_intro"]
 
-            **How to use**:
-            1. Type your question in the input box.
-            2. Select a mode and hit submit.
-            3. Explore the detailed results with optional images.
+if st.session_state["show_intro"]:
+    st.sidebar.markdown("""
+    ### Welcome to Wildlife Knowledge Assistant 🐾
+    This bot is designed to help you:
+    - Query and visualize wildlife-related data using **Neo4j**.
+    - Ask complex questions and receive detailed answers powered by **LLM**.
+    - Explore multimedia (text and images) information related to your questions.
+    - Discover more about wildlife in the United States and beyond.
 
-            We hope you enjoy exploring the wildlife knowledge base! 🌿
-            """)
-            st.image("https://upload.wikimedia.org/wikipedia/commons/3/32/Nature-Wildlife.jpg", use_column_width=True)
+    **Features**:
+    - **Interactive Modes**: Choose from various response modes (text-only, multimedia, etc.).
+    - **Custom AI Models**: Powered by GPT-based LLMs and integrated APIs for a rich experience.
+    - **Neo4j Database**: Provides real-time data querying and visualization.
 
-# 创建一个按钮触发弹出框
-st.sidebar.markdown("### 🔍 Bot Info")
-if st.sidebar.button("What is this bot?"):
-    show_bot_introduction()
+    **How to use**:
+    1. Type your question in the input box.
+    2. Select a mode and hit submit.
+    3. Explore the detailed results with optional images.
+
+    Enjoy exploring the wildlife knowledge base! 🌿
+    """)
 
 # 页面初始化
 #st.title("Wildlife Knowledge Assistant")
