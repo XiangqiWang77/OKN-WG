@@ -375,10 +375,81 @@ def handle_chat_mode(name, user_input):
 
     return result
 
+import time
+from streamlit_modal import Modal  # 使用 `streamlit-modal` 插件实现弹出框
+import threading
+def keep_neo4j_alive(interval=300):
+    def query():
+        with driver.session() as session:
+            try:
+                session.run("MATCH (n) RETURN count(n) LIMIT 1")
+                print("Keep-alive query sent to Neo4j.")
+            except Exception as e:
+                print(f"Neo4j keep-alive query failed: {e}")
 
+    while True:
+        query()
+        time.sleep(interval)
+
+# 保持 Streamlit 应用的运行
+def keep_streamlit_alive():
+    while True:
+        time.sleep(1)
+        st.experimental_rerun()
+
+# 在后台线程中启动 keep-alive 功能
+def start_keep_alive_tasks():
+    # 启动 Neo4j 保活线程
+    neo4j_thread = threading.Thread(target=keep_neo4j_alive, daemon=True)
+    neo4j_thread.start()
+
+    # 启动 Streamlit 保活线程
+    streamlit_thread = threading.Thread(target=keep_streamlit_alive, daemon=True)
+    streamlit_thread.start()
+
+# 初始化保活任务
+if "keep_alive_started" not in st.session_state:
+    start_keep_alive_tasks()
+    st.session_state["keep_alive_started"] = True
+
+# 页面布局
+st.title("Wildlife Knowledge Assistant 🐾")
+st.write("A bot to assist you with wildlife knowledge and Neo4j-powered queries.")
+
+# 创建弹出框介绍功能
+def show_bot_introduction():
+    modal = Modal(key="introduction_modal", title="Meet Your Wildlife Knowledge Assistant!")
+    if modal.open:
+        with modal.container():
+            st.markdown("""
+            ### Welcome to Wildlife Knowledge Assistant 🐾
+            This bot is designed to help you:
+            - Query and visualize wildlife-related data using **Neo4j**.
+            - Ask complex questions and receive detailed answers powered by **LLM**.
+            - Explore multimedia (text and images) information related to your questions.
+            - Discover more about wildlife in the United States and beyond.
+
+            **Features**:
+            - **Interactive Modes**: Choose from various response modes (text-only, multimedia, etc.).
+            - **Custom AI Models**: Powered by GPT-based LLMs and integrated APIs for a rich experience.
+            - **Neo4j Database**: Provides real-time data querying and visualization.
+
+            **How to use**:
+            1. Type your question in the input box.
+            2. Select a mode and hit submit.
+            3. Explore the detailed results with optional images.
+
+            We hope you enjoy exploring the wildlife knowledge base! 🌿
+            """)
+            st.image("https://upload.wikimedia.org/wikipedia/commons/3/32/Nature-Wildlife.jpg", use_column_width=True)
+
+# 创建一个按钮触发弹出框
+st.sidebar.markdown("### 🔍 Bot Info")
+if st.sidebar.button("What is this bot?"):
+    show_bot_introduction()
 
 # 页面初始化
-st.title("Wildlife Knowledge Assistant")
+#st.title("Wildlife Knowledge Assistant")
 
 name = mode_select()
 user_input_text = st.text_input("What would you like to know?")
