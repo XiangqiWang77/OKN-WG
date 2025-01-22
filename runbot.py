@@ -415,7 +415,7 @@ if "keep_alive_started" not in st.session_state:
 
 
 # 获取 URL 查询参数
-query_params = st.query_params()
+query_params = st.query_params
 query = query_params.get("query", [None])[0]  # 如果存在 "query"，获取其值
 
 # 页面布局
