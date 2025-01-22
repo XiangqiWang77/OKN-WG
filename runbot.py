@@ -337,6 +337,7 @@ def handle_chat_mode(name, user_input):
         # 通过 LLM 推断可能的节点范围
         node_scope = infer_node_scope_from_question(llm, user_input)
 
+        print("node scope is", node_scope)
         # 执行 web search agent，传递节点范围限制
         agent_result = web_search_agent(
             llm=llm,
@@ -412,6 +413,11 @@ if "keep_alive_started" not in st.session_state:
     start_keep_alive_tasks()
     st.session_state["keep_alive_started"] = True
 
+
+# 获取 URL 查询参数
+query_params = st.experimental_get_query_params()
+query = query_params.get("query", [None])[0]  # 如果存在 "query"，获取其值
+
 # 页面布局
 st.title("Wildlife Knowledge Assistant 🐾")
 st.write("A bot to assist you with wildlife knowledge and Neo4j-powered queries.")
@@ -452,6 +458,15 @@ if st.session_state["show_intro"]:
 name = mode_select()
 user_input_text = st.text_input("What would you like to know?")
 
-if user_input_text:
-    result = handle_chat_mode(name, user_input_text)
+# 如果 URL 中包含 `query` 参数，则直接处理
+if query:
+    st.write(f"**Query from URL:** {query}")
+    # 执行查询逻辑
+    result = handle_chat_mode(name, query)
     st.write(result)
+else:
+    # 如果没有 URL 参数，显示输入框
+    user_input_text = st.text_input("What would you like to know?")
+    if user_input_text:
+        result = handle_chat_mode(name, user_input_text)
+        st.write(result)
