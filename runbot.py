@@ -417,6 +417,7 @@ if "keep_alive_started" not in st.session_state:
 # 获取 URL 查询参数
 query_params = st.query_params
 query = query_params.get("query", [None])[0]  # 如果存在 "query"，获取其值
+st.write(f"**Query from URL:** {query}")
 
 # 页面布局
 st.title("Wildlife Knowledge Assistant 🐾")
@@ -458,15 +459,13 @@ if st.session_state["show_intro"]:
 name = mode_select()
 user_input_text = st.text_input("What would you like to know?")
 
-# 如果 URL 中包含 `query` 参数，则直接处理
 if query:
     st.write(f"**Query from URL:** {query}")
-    # 执行查询逻辑
     result = handle_chat_mode(name, query)
     st.write(result)
 else:
     # 如果没有 URL 参数，显示输入框
-    user_input_text = st.text_input("What would you like to know?")
+    user_input_text = st.text_input("What would you like to know?", key="user_input_key_1")
     if user_input_text:
         result = handle_chat_mode(name, user_input_text)
         st.write(result)
