@@ -457,7 +457,7 @@ if st.session_state["show_intro"]:
 #st.title("Wildlife Knowledge Assistant")
 
 name = mode_select()
-user_input_text = st.text_input("What would you like to know?")
+#user_input_text = st.text_input("What would you like to know?")
 
 # 防止两个对话框的逻辑
 user_input_text = None
