@@ -459,13 +459,17 @@ if st.session_state["show_intro"]:
 name = mode_select()
 user_input_text = st.text_input("What would you like to know?")
 
+# 防止两个对话框的逻辑
+user_input_text = None
+
+# 如果 URL 中存在 query 参数，则优先处理 URL 的 query 参数
 if query:
     st.write(f"**Query from URL:** {query}")
     result = handle_chat_mode(name, query)
     st.write(result)
 else:
     # 如果没有 URL 参数，显示输入框
-    user_input_text = st.text_input("What would you like to know?", key="user_input_key_1")
+    user_input_text = st.text_input("What would you like to know?", key="user_input_key")
     if user_input_text:
         result = handle_chat_mode(name, user_input_text)
         st.write(result)
