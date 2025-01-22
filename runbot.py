@@ -415,8 +415,15 @@ if "keep_alive_started" not in st.session_state:
 
 
 # 获取 URL 查询参数
+# 获取 URL 查询参数
 query_params = st.query_params
-query = query_params.get("query", [None])[0]  # 如果存在 "query"，获取其值
+query = query_params.get("query", None)  # 直接获取 "query" 的值
+
+# 确保 query 是字符串而不是列表
+if query:
+    if isinstance(query, list):
+        query = " ".join(query)  # 将列表转换为字符串，防止截取问题
+
 st.write(f"**Query from URL:** {query}")
 
 # 页面布局
