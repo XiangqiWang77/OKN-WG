@@ -62,7 +62,7 @@ def find_urls(kg_text):
 
 
 
-def extract_node_categories_from_question(question: str) -> dict:
+def extract_keywords_from_question(question: str) -> dict:
     """
     Extract the source and target node categories (e.g., "Bird_name", "Location")
     from the user's question using an LLM prompt.
@@ -105,7 +105,7 @@ def extract_node_categories_from_question(question: str) -> dict:
     return categories
 
 
-def construct_cypher_query(node_categories: dict, multi_option: int = 1) -> str:
+def construct_cypher_query(kwargs, multi_option) -> str:
     """
     Construct a Cypher query using the extracted node categories.
 
@@ -117,8 +117,8 @@ def construct_cypher_query(node_categories: dict, multi_option: int = 1) -> str:
 
     multi_option: Used to demonstrate returning different fields.
     """
-    source_node_category = node_categories.get("source_node_category", "Reptile_name")
-    target_node_category = node_categories.get("target_node_category", "Location")
+    source_node_category = kwargs.get("source_node_category", "Reptile_name")
+    target_node_category = kwargs.get("target_node_category", "Location")
 
     # Basic MATCH
     cypher_query = f"""
