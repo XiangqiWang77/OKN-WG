@@ -138,7 +138,7 @@ def classfic(user_input, json_data, llm):
     Question: {user_input}
     Available Dictionary Scopes: {json.dumps(json_data)}
     
-    Return only the relevant scope name.
+    Return only the relevant scope name. 
     """
     return send_openai_prompt(prompt)
 

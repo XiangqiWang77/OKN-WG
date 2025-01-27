@@ -58,91 +58,84 @@ def find_urls(kg_text):
 
 
 # 解析用户问题，提取关键词
-def extract_keywords_from_question(question: str) -> dict:
-    prompt = """
-    You are an intelligent assistant specializing in querying a Neo4j database for animal observations in Florida. 
-    Your task is to extract keywords from user questions to build Cypher queries.
-    
-    Note that animals specis are formatted like "Reptile_name" not "Reptile".
 
-    Output Requirements:
-    You must generate a dict formatted like this:
 
+
+
+def extract_node_categories_from_question(question: str) -> dict:
+    """
+    Extract the source and target node categories (e.g., "Bird_name", "Location")
+    from the user's question using an LLM prompt.
+
+    If extraction fails, it returns default node categories.
+    """
+    prompt = f"""
+    You are an intelligent assistant responsible for deducing and extracting the "source node category"
+    and "target node category" that we need to use in a Neo4j database based on the user's question.
+
+    User question:
+    {question}
+
+    You must output a dictionary as a valid JSON-formatted string that can be loaded by 'json.loads':
+    {{
+        "source_node_category": "xxx",
+        "target_node_category": "xxx"
+    }}
+
+    If you cannot determine these categories, please return:
+    {{
+        "source_node_category": "Reptile_name",
+        "target_node_category": "Location"
+    }}
+    """
+
+    # Here, replace 'send_openai_prompt' with your actual function for calling the LLM.
+    # The function should return the raw string produced by the model (e.g., JSON).
+    response_text = send_openai_prompt(prompt)
+
+    try:
+        categories = json.loads(response_text)
+    except json.JSONDecodeError:
+        # If parsing fails, return default categories
+        categories = {
+            "source_node_category": "Reptile_name",
+            "target_node_category": "Location"
+        }
+
+    return categories
+
+
+def construct_cypher_query(node_categories: dict, multi_option: int = 1) -> str:
+    """
+    Construct a Cypher query using the extracted node categories.
+
+    node_categories: A dict in the form:
     {
-    "specy_type": "Reptile_name",
-    "location_attribute": "name",
-    "location_value": "Alachua",
-    "specy_attribute": "name",
-    "specy_value": "",
-    "observation_attribute": "dates",
-    "observation_value": ""
+        "source_node_category": "Bird_name",
+        "target_node_category": "Location"
     }
 
-    Extract and return these fields as a plain string (not JSON) based on the given question.
+    multi_option: Used to demonstrate returning different fields.
     """
+    source_node_category = node_categories.get("source_node_category", "Reptile_name")
+    target_node_category = node_categories.get("target_node_category", "Location")
 
-    # 使用 send_openai_prompt 直接调用 LLM
-    response_text = send_openai_prompt(f"The question is: {question}\n{prompt}")
-
-    # 解析字符串为字典
-    try:
-        keywords = json.loads(response_text)
-    except json.JSONDecodeError:
-        # 如果解析失败，返回默认值
-        keywords = {
-            "specy_type": "Animal_name",
-            "location_attribute": "name",
-            "location_value": "",
-            "specy_attribute": "name",
-            "specy_value": "",
-            "observation_attribute": "dates",
-            "observation_value": ""
-        }
-    return keywords
-
-
-
-# 生成 Cypher 查询
-def construct_cypher_query(kwargs, multi_option):
-    # 从 kwargs 获取字段
-    specy_type = kwargs.get("specy_type", "Animal_name")
-    location_attribute = kwargs.get("location_attribute", "name")
-    location_value = kwargs.get("location_value", "")
-    specy_attribute = kwargs.get("specy_attribute", "name")
-    specy_value = kwargs.get("specy_value", "")
-    observation_attribute = kwargs.get("observation_attribute", "dates")
-    observation_value = kwargs.get("observation_value", "")
-
-    conditions = []
-    # 根据字段构建 WHERE 条件
-    if location_value:
-        conditions.append(f'l.{location_attribute} CONTAINS "{location_value}"')
-    if specy_value:
-        conditions.append(f'r.{specy_attribute} CONTAINS "{specy_value}"')
-    if observation_value:
-        conditions.append(f'o.{observation_attribute} CONTAINS "{observation_value}"')
-
-    # 生成最终 Cypher 查询
-    where_clause = " AND ".join(conditions)
-    
+    # Basic MATCH
     cypher_query = f"""
-    MATCH (r:{specy_type})-[o:OBSERVED_AT]->(l:Location)
+    MATCH (s:{source_node_category})-[r:OBSERVED_AT]->(t:{target_node_category})
     """
-    if where_clause:
-        cypher_query += f"WHERE {where_clause}\n"
 
+    # Return fields based on multi_option
     if multi_option == 1:
         cypher_query += """
-        RETURN r.name AS specy_name, o.multimedia AS Multimedia, l.name AS location_name
+    RETURN s.name AS source_name, r.multimedia AS multimedia, t.name AS target_name
         """
     else:
         cypher_query += """
-        RETURN r, o, l
+    RETURN s, r, t
         """
 
     return cypher_query
-
-
 
 # 查询 Neo4j 图数据库
 def query_neo4j(cypher_query):
@@ -156,19 +149,19 @@ def query_neo4j(cypher_query):
 
 
 # 处理查询和 LLM 交互，生成最终答案
-def generate_aspect_chain(question, multimedia_option, aspect, llm_name, vllm_name=None):
+def generate_aspect_chain(question, multimedia_option, llm_name, aspect=None, vllm_name=None):
     # 步骤1：从用户问题中提取关键词
     kwargs = extract_keywords_from_question(question)
     
     print(kwargs)
     # 步骤2：根据 aspect 调整查询方式
-    if aspect == "Multimedia":
-        multi_option = 1  # 启用多媒体查询
-    else:
-        multi_option = 0  # 关闭多媒体查询，返回一般结果
+    #if aspect == "Multimedia":
+    #    multi_option = 1  # 启用多媒体查询
+    #else:
+    #    multi_option = 0  # 关闭多媒体查询，返回一般结果
     
     # 步骤3：构建 Cypher 查询
-    formatted_query = construct_cypher_query(kwargs, multi_option)
+    formatted_query = construct_cypher_query(kwargs, multi_option=0)
     
     print("formatted_query", formatted_query)
 
@@ -192,19 +185,19 @@ def generate_aspect_chain(question, multimedia_option, aspect, llm_name, vllm_na
     print("kg_output", kg_output)
 
     # 步骤6：如果结果中包含多媒体 URL，进一步提取和展示
-    if multi_option:
-        if "http" in str(kg_output):
-            urls = find_urls(kg_output)
-            images = []
-            for url in urls[:10]:
-                image_url = image_url_finder(url)
-                if image_url:
-                    response = requests.get(image_url)
-                    img = Image.open(BytesIO(response.content)).convert("RGB")
-                    plt.imshow(img)
-                    plt.show()
-                    images.append(img)
-            return {"answer": response, "URLs": urls}
+    #if multi_option:
+    #    if "http" in str(kg_output):
+    #        urls = find_urls(kg_output)
+    #        images = []
+    #        for url in urls[:10]:
+    #            image_url = image_url_finder(url)
+    #            if image_url:
+    #                response = requests.get(image_url)
+    #                img = Image.open(BytesIO(response.content)).convert("RGB")
+    #                plt.imshow(img)
+    #                plt.show()
+    #                images.append(img)
+    #        return {"answer": response, "URLs": urls}
 
     return {"answer": response}
 

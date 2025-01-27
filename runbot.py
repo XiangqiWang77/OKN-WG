@@ -306,11 +306,11 @@ def handle_chat_mode(name, user_input):
                 st.write("No images found for the extracted keywords.")
 
     elif name[0] == "AI as Toolbox for Aspect-Based Question":
-        aspect_category = classfic(user_input, json_data, llm)
+        #aspect_category = classfic(user_input, json_data, llm)
         temp_chain = generate_aspect_chain(
             question=user_input,
             multimedia_option=name[1],
-            aspect=aspect_category,
+            #aspect=aspect_category,
             llm_name=llm,
             vllm_name=None
         )
