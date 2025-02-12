@@ -1,185 +1,150 @@
 import os
-import streamlit as st
 import json
-from io import BytesIO
-from PIL import Image
+import re
 import requests
+from PIL import Image
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from neo4j import GraphDatabase
 from openai import OpenAI
-from toolbox.chains import configure_llm_only_chain, prompt_cypher, configure_qa_rag_chain, generate_llava_output, classfic, web_agent_multimedia
-from toolbox.utils import ImageDownloader, convert_to_base64
-from toolbox.aspects import generate_aspect_chain, extract_keywords_from_question
-from toolbox.web_agent import web_search_agent, infer_node_scope_from_question 
+from neo4j import GraphDatabase
+from io import BytesIO
+import matplotlib.pyplot as plt
+import streamlit as st
 
-# Load environment variables if needed
-# load_dotenv(".env")
+# 加载环境变量（如果需要）
+# load_dotenv()
 
-# Neo4j configuration
+# OpenAI 配置
+api_key = st.secrets["OPENAI_KEY"]
+client = OpenAI(api_key=api_key)
+
+# Neo4j 数据库配置
 NEO4J_URI = st.secrets["NEO4J_URI"]
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-# OpenAI configuration
-api_key = st.secrets["OPENAI_KEY"]
-client = OpenAI(api_key=api_key)
-
-# Load aspects JSON
-with open('aspects.json', 'r') as f:
-    json_data = json.load(f)
-
+# 发送请求到 OpenAI
 def send_openai_prompt(prompt_text, model_name="gpt-4o", temperature=0.7):
     try:
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt_text}],
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt_text[:10000]}],
             model=model_name,
             temperature=temperature,
-            # max_tokens=token_limit
+            # max_tokens=2000
         )
-        return chat_completion.choices[0].message.content
+        return response.choices[0].message.content
     except Exception as e:
         return f"Request failed: {e}"
 
-def get_autocomplete_suggestions(question):
-    prompt = f"""
-    You are given a graph containing information about animals and locations in Florida. Complete the user's partially entered question.
-    Input: {question}
-    """
-    return send_openai_prompt(prompt)
-
-def load_llm(llm_name: str):
-    return lambda prompt: send_openai_prompt(prompt, model_name=llm_name)
-
-llm = load_llm("gpt-4o")
-
-def query_neo4j(cypher_query, params=None):
-    with driver.session() as session:
-        result = session.run(cypher_query, params or {})
-        return [record for record in result]
-
-def display_images(urls):
-    if not urls:
-        st.write("No images available.")
-        return
-    cols = st.columns(len(urls))
-    for i, url in enumerate(urls):
-        try:
-            headers = {
-                "User-Agent": "MyImageFetcher/1.0 (https://wildlifelookup.streamlit.app/; xwang76@nd.edu)",
-                "Referer": "https://www.wikimedia.org/"
-            }
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            content_type = response.headers.get("Content-Type", "")
-            if not content_type.startswith("image/"):
-                raise ValueError(f"URL does not point to an image: {url}")
-            image = Image.open(BytesIO(response.content)).convert("RGB")
-            cols[i].image(image, caption=f"Image {i+1}", use_column_width=True)
-        except Exception as e:
-            cols[i].write(f"Failed to load image {i+1}: {e}")
-
-def chat_input():
-    user_input_text = st.text_input("What do you want to know about wildlife in the US?", key="user_input_text", value="")
-    if user_input_text:
-        suggestion = get_autocomplete_suggestions(user_input_text)
-        st.markdown(f"**Suggestion:** {suggestion}")
-        if st.button("Accept Suggestion"):
-            user_input_text = suggestion
-        response = llm(user_input_text)
-        with st.chat_message("assistant"):
-            st.write(response)
-
-def mode_select() -> list:
-    options = ["Regular Response", "AI as Translator to KN-Wildlife", "AI as Toolbox for Aspect-Based Question", "AI as an Online(Wikidata) Searching Agent"]
-    multimediaoptions = ["Text Only", "Text and Images"]
-    selected_multimedia_mode = st.radio("Select output mode", multimediaoptions, horizontal=True)
-    mode_selected = st.radio("Select external sources", options, horizontal=True)
-    return [mode_selected, selected_multimedia_mode]
-
-def extract_keywords_from_response(response_text):
-    prompt = f"""
-    Extract the top 5 most relevant keywords or entities from the following text.
-    Focus on nouns, names, or important terms relevant to the context.
-
-    Text: {response_text}
-
-    Return the keywords as a Python list of strings.
-    """
-    try:
-        keywords_response = send_openai_prompt(prompt, model_name="gpt-4", temperature=0.5)
-        keywords = eval(keywords_response.strip())
-        return keywords
-    except Exception as e:
-        print(f"Error extracting keywords: {e}")
-        return []
-
-def get_wikidata_id(entity_name):
-    url = "https://www.wikidata.org/w/api.php"
-    params = {
-        "action": "wbsearchentities",
-        "language": "en",
-        "format": "json",
-        "search": entity_name
-    }
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        if data.get('search'):
-            return data['search'][0]['id']
-    except Exception as e:
-        print(f"Error fetching Wikidata ID for '{entity_name}': {e}")
+# 提取网页上的图片 URL
+def image_url_finder(webpage_url):
+    response = requests.get(webpage_url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
+    for img in soup.find_all('meta'):
+        img_url = img.get('content')
+        if img_url and re.search(r'(\.jpg|\.jpeg|\.png|\.webp)$', img_url, re.IGNORECASE):
+            return img_url
     return None
 
-def validate_image_url(url, headers):
+# 从知识图谱查询结果中提取 URL
+def find_urls(kg_text):
+    return re.findall(r'https:\/\/www\.inaturalist\.org\/observations\/\d+', str(kg_text))
+
+# 解析用户问题，提取关键词（保持原有 prompt 不变）
+def extract_keywords_from_question(question: str) -> dict:
+    prompt = f"""
+    You are an intelligent assistant responsible for deducing and extracting the "source node category"
+    and "target node category" that we need to use in a Neo4j database based on the user's question.
+
+    User question:
+    {question}
+
+    You must output a dictionary as a valid JSON-formatted string that can be loaded by 'json.loads':
+    {{
+        "source_node_category": "xxx",
+        "target_node_category": "xxx"
+    }}
+
+    If you cannot determine these categories, please return:
+    {{
+        "source_node_category": "Reptile_name",
+        "target_node_category": "Location"
+    }}
+    """
+    response_text = send_openai_prompt(prompt)
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        content_type = response.headers.get("Content-Type", "")
-        if content_type.startswith("image/"):
-            return True
-    except Exception as e:
-        print(f"Error validating image URL '{url}': {e}")
-    return False
-
-def search_images_from_keywords(keywords):
-    image_urls = []
-    wikidata_sparql_endpoint = "https://query.wikidata.org/sparql"
-    for keyword in keywords[:5]:
-        entity_id = get_wikidata_id(keyword)
-        if not entity_id:
-            continue
-        query = f"""
-        SELECT ?image WHERE {{
-          wd:{entity_id} wdt:P18 ?image.
-        }}
-        LIMIT 1
-        """
-        headers = {
-            "User-Agent": "MyImageFetcher/1.0 (https://wildlifelookup.streamlit.app/; xwang76@nd.edu)"
+        categories = json.loads(response_text)
+    except json.JSONDecodeError:
+        categories = {
+            "source_node_category": "Reptile_name",
+            "target_node_category": "Location"
         }
-        try:
-            response = requests.get(
-                wikidata_sparql_endpoint,
-                params={"query": query, "format": "json"},
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
-            for result in data["results"]["bindings"]:
-                if "image" in result:
-                    image_url = result["image"]["value"]
-                    if validate_image_url(image_url, headers):
-                        image_urls.append(image_url)
-                    else:
-                        print(f"Invalid image URL (skipped): {image_url}")
-        except Exception as e:
-            print(f"Error fetching image for keyword '{keyword}': {e}")
-    return image_urls
+    return categories
 
-# 新增：构造结构化 Cypher 查询函数，只使用 species 与 county 参数
-def construct_structured_cypher_query(species, county, multi_option=0):
+# 构造 Cypher 查询（保持原有逻辑，但修改 county 匹配为模糊匹配，提升健壮性）
+def construct_cypher_query(kwargs, multi_option) -> str:
+    source_node_category = kwargs.get("source_node_category", "Reptile_name")
+    target_node_category = kwargs.get("target_node_category", "Location")
+    cypher_query = f"""
+    MATCH (s:{source_node_category})-[r:OBSERVED_AT]->(t:{target_node_category})
+    WHERE toLower(t.name) CONTAINS toLower('{kwargs.get('county', '')}')
+    """
+    if multi_option == 1:
+        cypher_query += """
+    RETURN s.name AS source_name, r.multimedia AS multimedia, t.name AS target_name
+        """
+    else:
+        cypher_query += """
+    RETURN s, r, t
+        """
+    return cypher_query
+
+# 查询 Neo4j 图数据库
+def query_neo4j(cypher_query):
+    try:
+        with driver.session() as session:
+            result = session.run(cypher_query)
+            return [record for record in result]
+    except Exception as e:
+        print(f"Neo4j Query Failed: {e}")
+        return []
+
+# 处理查询和 LLM 交互，生成最终答案（用于 free text 调用 generate_aspect_chain）
+def generate_aspect_chain(question, multimedia_option, llm_name, aspect=None, vllm_name=None):
+    kwargs = extract_keywords_from_question(question)
+    print(kwargs)
+    formatted_query = construct_cypher_query(kwargs, multi_option=0)
+    print("formatted_query", formatted_query)
+    kg_output = query_neo4j(formatted_query)
+    kg_output = kg_output[:10000]
+    prompt = f"""
+    Use the following knowledge graph output to answer the user's question:
+    - Question: {question}
+    - Aspect: {aspect}
+    - KG Output: {kg_output}
+    """
+    response = send_openai_prompt(prompt)
+    print(response)
+    print("kg_output", kg_output)
+    return {"answer": response}
+
+# 生成问答任务（保持不变）
+def generate_ticket(title, body):
+    prompt = f"""
+    Generate a new question for the knowledge graph based on the following example:
+
+    Title: {title}
+    Body: {body[:200]}
+
+    Create a similar question in the same style.
+    """
+    result = send_openai_prompt(prompt)
+    return result
+
+# 新增：构造结构化查询专用的 Cypher 查询函数，直接基于 species 与 county 构造查询（使用模糊匹配）
+def construct_selection_cypher_query(species, county, multi_option=0):
     species_map = {
        "Fish": "Fish_name",
        "Reptile": "Reptile_name",
@@ -187,27 +152,26 @@ def construct_structured_cypher_query(species, county, multi_option=0):
        "Birds": "Bird_name"
     }
     node_label = species_map.get(species, "Reptile_name")
-    # 使用 toLower() 和 CONTAINS() 来匹配 county 字段，保证更健壮的查询
+    # county 使用模糊匹配，避免因数据中存储全称而查不到
     if multi_option == 1:
         cypher_query = f'''
-        MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
-        WHERE toLower(c.name) CONTAINS toLower('{county}')
+        MATCH (s:{node_label})-[:OBSERVED_AT]->(c:Location)
+        WHERE toLower(c.name) CONTAINS toLower("{county}")
         RETURN s.name AS species_name, s.multimedia AS multimedia, c.name AS county_name
         '''
     else:
         cypher_query = f'''
-        MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
-        WHERE toLower(c.name) CONTAINS toLower('{county}')
+        MATCH (s:{node_label})-[:OBSERVED_AT]->(c:Location)
+        WHERE toLower(c.name) CONTAINS toLower("{county}")
         RETURN s, c
         '''
     return cypher_query
 
 # 处理不同模式下的逻辑
-def handle_chat_mode(name, user_input):
-    print(name[0])
+def handle_chat_mode(mode_info, user_input):
+    print(mode_info[0])
     result = None
-
-    # 若检测到结构化查询（包含 "Task:"），只取前两个参数（species 与 county）
+    # 若检测到结构化查询（Advanced Selection Mode），要求输入格式为："Species: X | County: Y | Task: Z"
     if "Task:" in user_input:
         parts = [part.strip() for part in user_input.split("|")]
         if len(parts) >= 3:
@@ -216,10 +180,10 @@ def handle_chat_mode(name, user_input):
             task_value = parts[2].split(":", 1)[1].strip() if ":" in parts[2] else ""
         else:
             species_value = county_value = task_value = ""
-        # 构造有效的 Cypher 查询（只使用 species 与 county）
-        cypher_query = construct_structured_cypher_query(species_value, county_value, multi_option=0)
+        # 构造结构化查询专用的 Cypher 查询（只使用 species 与 county）
+        cypher_query = construct_selection_cypher_query(species_value, county_value, multi_option=0)
         kg_data = query_neo4j(cypher_query)
-        # 若任务为 Data Display，则直接展示数据；否则调用 LLM 处理
+        # 若任务为 Data Display，则直接展示查询到的数据
         if "data display" in task_value.lower():
             result = f"Data Retrieved: {kg_data}"
         else:
@@ -230,13 +194,12 @@ def handle_chat_mode(name, user_input):
             )
             result = send_openai_prompt(prompt)
         return result
-
     else:
-        # 非结构化查询沿用原有逻辑
-        if name[0] == "Regular Response":
-            if name[1] == "Text Only":
+        # 非结构化查询按照原有逻辑处理
+        if mode_info[0] == "Regular Response":
+            if mode_info[1] == "Text Only":
                 result = configure_llm_only_chain(user_input)
-            elif name[1] == "Text and Images":
+            elif mode_info[1] == "Text and Images":
                 result = configure_llm_only_chain(user_input)
                 keywords = extract_keywords_from_response(result)
                 image_urls = search_images_from_keywords(keywords)
@@ -244,11 +207,11 @@ def handle_chat_mode(name, user_input):
                     display_images(image_urls)
                 else:
                     st.write("No images found for the extracted keywords.")
-        elif name[0] == "AI as Translator to KN-Wildlife":
+        elif mode_info[0] == "AI as Translator to KN-Wildlife":
             translate_function = prompt_cypher(llm)
             temp_result = translate_function(user_input)
             print(temp_result)
-            if name[1] == "Text Only":
+            if mode_info[1] == "Text Only":
                 rag_chain = configure_qa_rag_chain(
                     llm,
                     query=temp_result,
@@ -257,7 +220,7 @@ def handle_chat_mode(name, user_input):
                     password=NEO4J_PASSWORD
                 )
                 result = rag_chain
-            elif name[1] == "Text and Images":
+            elif mode_info[1] == "Text and Images":
                 kg_output = query_neo4j(temp_result)
                 print("kg_output", kg_output)
                 feed_result = generate_llava_output(user_input, kg_output)
@@ -268,17 +231,17 @@ def handle_chat_mode(name, user_input):
                     display_images(image_urls)
                 else:
                     st.write("No images found for the extracted keywords.")
-        elif name[0] == "AI as Toolbox for Aspect-Based Question":
+        elif mode_info[0] == "AI as Toolbox for Aspect-Based Question":
             temp_chain = generate_aspect_chain(
                 question=user_input,
-                multimedia_option=name[1],
+                multimedia_option=mode_info[1],
                 llm_name=llm,
                 vllm_name=None
             )
             feed_result = temp_chain
-            if name[1] == "Text Only":
+            if mode_info[1] == "Text Only":
                 result = feed_result["answer"]
-            elif name[1] == "Text and Images":
+            elif mode_info[1] == "Text and Images":
                 result = feed_result["answer"]
                 keywords = extract_keywords_from_response(result)
                 image_urls = search_images_from_keywords(keywords)
@@ -286,7 +249,7 @@ def handle_chat_mode(name, user_input):
                     display_images(image_urls)
                 else:
                     st.write("No images found for the extracted keywords.")
-        elif name[0] == "AI as an Online(Wikidata) Searching Agent":
+        elif mode_info[0] == "AI as an Online(Wikidata) Searching Agent":
             print("Function calling")
             node_scope = infer_node_scope_from_question(llm, user_input)
             print("node scope is", node_scope)
@@ -300,9 +263,9 @@ def handle_chat_mode(name, user_input):
                 "Please provide an answer."
             )
             print(Final_str)
-            if name[1] == "Text Only":
+            if mode_info[1] == "Text Only":
                 result = send_openai_prompt(Final_str)
-            elif name[1] == "Text and Images":
+            elif mode_info[1] == "Text and Images":
                 result = send_openai_prompt(Final_str)
                 keywords = extract_keywords_from_response(result)
                 image_urls = search_images_from_keywords(keywords)
@@ -314,8 +277,7 @@ def handle_chat_mode(name, user_input):
             result = "No result generated. Please refine your question or try a different mode."
         return result
 
-import time
-import threading
+# 保活线程相关代码
 def keep_neo4j_alive(interval=300):
     def query():
         with driver.session() as session:
@@ -326,14 +288,17 @@ def keep_neo4j_alive(interval=300):
                 print(f"Neo4j keep-alive query failed: {e}")
     while True:
         query()
+        import time
         time.sleep(interval)
 
 def keep_streamlit_alive():
     while True:
+        import time
         time.sleep(1)
         st.experimental_rerun()
 
 def start_keep_alive_tasks():
+    import threading
     neo4j_thread = threading.Thread(target=keep_neo4j_alive, daemon=True)
     neo4j_thread.start()
     streamlit_thread = threading.Thread(target=keep_streamlit_alive, daemon=True)
@@ -343,6 +308,7 @@ if "keep_alive_started" not in st.session_state:
     start_keep_alive_tasks()
     st.session_state["keep_alive_started"] = True
 
+# 处理 URL 查询参数
 query_params = st.query_params
 query = query_params.get("query", None)
 if query:
@@ -383,7 +349,6 @@ if st.session_state["show_intro"]:
 
 st.markdown("### Choose your input mode")
 input_mode = st.radio("Select input mode", options=["Free Text", "Advanced Selection Mode"], key="input_mode")
-
 mode_info = mode_select()
 
 if query:
@@ -392,7 +357,7 @@ if query:
     st.write(result)
 else:
     if input_mode == "Advanced Selection Mode":
-        # Advanced Selection Mode: 选择 species、输入 county、选择任务
+        # Advanced Selection Mode：选择 species、输入 county、选择任务
         species_options = ["Select a species", "Fish", "Reptile", "Amphibian", "Birds"]
         selected_species = st.selectbox("Select species", species_options, key="species")
         county_name = st.text_input("Enter county name", key="county")
