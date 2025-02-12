@@ -146,17 +146,4 @@ def web_search_agent(llm, question, node_scope=""):
     print("Collected content:", all_content)
     return all_content
 
-# -------------------------------------------------------------------
-# Example usage (if needed, you can call web_search_agent from your Streamlit app):
-if __name__ == "__main__":
-    # For testing outside of Streamlit:
-    test_question = "What are some observations of birds in Florida?"
-    # Here we assume 'llm' is available; you may pass None or a dummy variable since our functions use send_openai_prompt.
-    node_scope = infer_node_scope_from_question(None, test_question)
-    print("Inferred node scope:", node_scope)
-    query = construct_cypher_query_with_scope(node_scope)
-    print("Constructed Cypher query:", query)
-    wikidata_ids = fetch_wikidata_ids_from_neo4j(node_scope)
-    print("Fetched Wikidata IDs:", wikidata_ids)
-    contents = web_search_agent(None, test_question, node_scope)
-    print("Retrieved content from Wikidata pages:", contents)
+

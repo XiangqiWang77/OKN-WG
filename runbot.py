@@ -20,7 +20,7 @@ from toolbox.newaspects import generate_aspect_chain, extract_keywords_from_ques
 from toolbox.newweb_agent import web_search_agent, infer_node_scope_from_question
 
 # -----------------------------
-# Basic configuration (adjust as needed)
+# Basic configuration
 # load_dotenv(".env")
 NEO4J_URI = st.secrets["NEO4J_URI"]
 NEO4J_USER = "neo4j"
@@ -43,7 +43,6 @@ def send_openai_prompt(prompt_text, model_name="gpt-4o", temperature=0.7):
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Request failed: {e}"
-# -----------------------------
 
 def get_autocomplete_suggestions(question):
     prompt = f"""
@@ -187,90 +186,113 @@ def search_images_from_keywords(keywords):
             print(f"Error fetching image for keyword '{keyword}': {e}")
     return image_urls
 
+# Updated handle_chat_mode function
 def handle_chat_mode(mode_info, user_input):
-    # mode_info is a list: [selected_mode, multimedia_mode]
-    print(mode_info[0])
-    result = None
-    if mode_info[0] == "Regular Response":
-        if mode_info[1] == "Text Only":
-            result = configure_llm_only_chain(user_input)
-        elif mode_info[1] == "Text and Images":
-            result = configure_llm_only_chain(user_input)
-            keywords = extract_keywords_from_response(result)
-            image_urls = search_images_from_keywords(keywords)
-            if image_urls:
-                display_images(image_urls)
-            else:
-                st.write("No images found for the extracted keywords.")
-    elif mode_info[0] == "AI as Translator to KN-Wildlife":
-        translate_function = prompt_cypher(llm)
-        temp_result = translate_function(user_input)
-        print(temp_result)
-        if mode_info[1] == "Text Only":
-            rag_chain = configure_qa_rag_chain(
-                llm,
-                query=temp_result,
-                Graph_url=NEO4J_URI,
-                username=NEO4J_USER,
-                password=NEO4J_PASSWORD
+    # Check if the query is a structured query (Advanced Selection Mode) by looking for "Task:"
+    if "Task:" in user_input:
+        parts = [part.strip() for part in user_input.split("|")]
+        if len(parts) >= 3:
+            # Expected parts: "Species: X", "County: Y", "Task: Z"
+            species_part = parts[0]
+            county_part = parts[1]
+            task_part = parts[2]
+        else:
+            species_part = county_part = task_part = ""
+        # Use only species and county to retrieve data
+        new_query = f"{species_part} | {county_part}"
+        kg_data = query_neo4j(new_query)
+        if "data display" in task_part.lower():
+            result = f"Data Retrieved: {kg_data}"
+        else:
+            prompt = (
+                f"Based on the retrieved data: {kg_data}, please provide a detailed answer "
+                f"for the following wildlife management task: {task_part}. "
+                f"Question (using species and county only): {new_query}"
             )
-            result = rag_chain
-        elif mode_info[1] == "Text and Images":
-            kg_output = query_neo4j(temp_result)
-            print("kg_output", kg_output)
-            feed_result = generate_llava_output(user_input, kg_output)
-            result = feed_result["answer"]
-            keywords = extract_keywords_from_response(result)
-            image_urls = search_images_from_keywords(keywords)
-            if image_urls:
-                display_images(image_urls)
-            else:
-                st.write("No images found for the extracted keywords.")
-    elif mode_info[0] == "AI as Toolbox for Aspect-Based Question":
-        temp_chain = generate_aspect_chain(
-            question=user_input,
-            multimedia_option=mode_info[1],
-            llm_name=llm,
-            vllm_name=None
-        )
-        feed_result = temp_chain
-        if mode_info[1] == "Text Only":
-            result = feed_result["answer"]
-        elif mode_info[1] == "Text and Images":
-            result = feed_result["answer"]
-            keywords = extract_keywords_from_response(result)
-            image_urls = search_images_from_keywords(keywords)
-            if image_urls:
-                display_images(image_urls)
-            else:
-                st.write("No images found for the extracted keywords.")
-    elif mode_info[0] == "AI as an Online(Wikidata) Searching Agent":
-        print("Function calling")
-        node_scope = infer_node_scope_from_question(llm, user_input)
-        print("node scope is", node_scope)
-        agent_result = web_search_agent(
-            llm=llm,
-            question=user_input,
-            node_scope=node_scope
-        )
-        final_str = (
-            f"Question: {user_input}. The web retrieval agent returns: {agent_result}. "
-            "Please provide an answer."
-        )
-        print(final_str)
-        if mode_info[1] == "Text Only":
-            result = send_openai_prompt(final_str)
-        elif mode_info[1] == "Text and Images":
-            result = send_openai_prompt(final_str)
-            keywords = extract_keywords_from_response(result)
-            image_urls = search_images_from_keywords(keywords)
-            if image_urls:
-                display_images(image_urls)
-            else:
-                st.write("No images found for the extracted keywords.")
-    if result is None:
-        result = "No result generated. Please refine your question or try a different mode."
-    return result
+            result = send_openai_prompt(prompt)
+        return result
+    else:
+        # For non-structured queries, use the existing handling
+        if mode_info[0] == "Regular Response":
+            if mode_info[1] == "Text Only":
+                result = configure_llm_only_chain(user_input)
+            elif mode_info[1] == "Text and Images":
+                result = configure_llm_only_chain(user_input)
+                keywords = extract_keywords_from_response(result)
+                image_urls = search_images_from_keywords(keywords)
+                if image_urls:
+                    display_images(image_urls)
+                else:
+                    st.write("No images found for the extracted keywords.")
+        elif mode_info[0] == "AI as Translator to KN-Wildlife":
+            translate_function = prompt_cypher(llm)
+            temp_result = translate_function(user_input)
+            print(temp_result)
+            if mode_info[1] == "Text Only":
+                rag_chain = configure_qa_rag_chain(
+                    llm,
+                    query=temp_result,
+                    Graph_url=NEO4J_URI,
+                    username=NEO4J_USER,
+                    password=NEO4J_PASSWORD
+                )
+                result = rag_chain
+            elif mode_info[1] == "Text and Images":
+                kg_output = query_neo4j(temp_result)
+                print("kg_output", kg_output)
+                feed_result = generate_llava_output(user_input, kg_output)
+                result = feed_result["answer"]
+                keywords = extract_keywords_from_response(result)
+                image_urls = search_images_from_keywords(keywords)
+                if image_urls:
+                    display_images(image_urls)
+                else:
+                    st.write("No images found for the extracted keywords.")
+        elif mode_info[0] == "AI as Toolbox for Aspect-Based Question":
+            temp_chain = generate_aspect_chain(
+                question=user_input,
+                multimedia_option=mode_info[1],
+                llm_name=llm,
+                vllm_name=None
+            )
+            feed_result = temp_chain
+            if mode_info[1] == "Text Only":
+                result = feed_result["answer"]
+            elif mode_info[1] == "Text and Images":
+                result = feed_result["answer"]
+                keywords = extract_keywords_from_response(result)
+                image_urls = search_images_from_keywords(keywords)
+                if image_urls:
+                    display_images(image_urls)
+                else:
+                    st.write("No images found for the extracted keywords.")
+        elif mode_info[0] == "AI as an Online(Wikidata) Searching Agent":
+            print("Function calling")
+            node_scope = infer_node_scope_from_question(llm, user_input)
+            print("node scope is", node_scope)
+            agent_result = web_search_agent(
+                llm=llm,
+                question=user_input,
+                node_scope=node_scope
+            )
+            final_str = (
+                f"Question: {user_input}. The web retrieval agent returns: {agent_result}. "
+                "Please provide an answer."
+            )
+            print(final_str)
+            if mode_info[1] == "Text Only":
+                result = send_openai_prompt(final_str)
+            elif mode_info[1] == "Text and Images":
+                result = send_openai_prompt(final_str)
+                keywords = extract_keywords_from_response(result)
+                image_urls = search_images_from_keywords(keywords)
+                if image_urls:
+                    display_images(image_urls)
+                else:
+                    st.write("No images found for the extracted keywords.")
+        if result is None:
+            result = "No result generated. Please refine your question or try a different mode."
+        return result
 
 import time
 import threading
@@ -340,9 +362,6 @@ if st.session_state["show_intro"]:
     Enjoy exploring the wildlife knowledge base! 🌿
     """)
 
-# -----------------------------
-# User input section with two input modes:
-# "Free Text" and "Advanced Selection Mode".
 st.markdown("### Choose your input mode")
 input_mode = st.radio("Select input mode", options=["Free Text", "Advanced Selection Mode"], key="input_mode")
 
@@ -354,10 +373,7 @@ if query:
     st.write(result)
 else:
     if input_mode == "Advanced Selection Mode":
-        # Advanced Selection Mode:
-        # 1. Select species (Fish, Reptile, Amphibian, Birds)
-        # 2. Enter county name (location)
-        # 3. Select a task specific to wildlife management.
+        # Advanced Selection Mode: select species, enter county name, select a task
         species_options = ["Select a species", "Fish", "Reptile", "Amphibian", "Birds"]
         selected_species = st.selectbox("Select species", species_options, key="species")
         
@@ -383,4 +399,3 @@ else:
         if user_input_text:
             result = handle_chat_mode(mode_info, user_input_text)
             st.write(result)
-# -----------------------------
