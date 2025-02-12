@@ -10,7 +10,7 @@ from io import BytesIO
 import streamlit as st
 from openai import OpenAI
 
-# （如有需要，可启用下行加载环境变量）
+# 如有需要，可加载环境变量
 # load_dotenv()
 
 # OpenAI 配置
@@ -62,47 +62,52 @@ def display_images(urls):
         except Exception as e:
             cols[i].write(f"Failed to load image {i+1}: {e}")
 
-# 利用 LLM 根据模板填空生成 Cypher 查询
-def generate_query_from_template(reptile, county):
-    # 预定义查询模板，其中 {reptile} 和 {county} 为占位符
+# 利用 LLM 填充查询模板（只填空）
+def generate_query_from_template(animal, county):
+    # 根据动物类别确定节点标签
+    animal_map = {
+        "Reptile": "Reptile_name",
+        "Amphibian": "Amphibian_name",
+        "Fish": "Fish_name",
+        "Bird": "Bird_name"
+    }
+    node_label = animal_map.get(animal, "Reptile_name")
+    # Neo4j 查询模板，注意 Location 节点用来匹配县名
     query_template = (
-        "MATCH (s:Reptile_name) "
-        "WHERE s.name CONTAINS '{reptile}' "
-        "MATCH (s)-[:OBSERVED_AT]->(c:County) "
-        "WHERE toLower(c.name) CONTAINS toLower('{county}') "
-        "RETURN s, c"
+        "MATCH (a:{node_label})-[:OBSERVED_AT]->(l:Location) "
+        "WHERE toLower(l.name) CONTAINS toLower('{county}') "
+        "RETURN a, l"
     )
-    # 构造提示，要求 LLM 返回 JSON 对象填充占位符
+    # 构造提示让 LLM 输出 JSON 对象填充占位符
     prompt = f"""
-You are given the following Neo4j Cypher query template with two placeholders:
+You are given the following Neo4j Cypher query template with placeholders:
 ---
-Template: "{query_template}"
+Template: "MATCH (a:{{node_label}})-[:OBSERVED_AT]->(l:Location) WHERE toLower(l.name) CONTAINS toLower('{{county}}') RETURN a, l"
 ---
-Fill in the placeholders using the following values.
-Reptile: "{reptile}"
+Fill in the placeholders using the provided values.
+Animal: "{animal}" (use the corresponding node label)
 County: "{county}"
-Output only a JSON object with keys "reptile" and "county". For example:
-{{"reptile": "Turtle", "county": "Alachua"}}
+Output only a valid JSON object with keys "node_label" and "county". For example:
+{{"node_label": "Reptile_name", "county": "Alachua"}}
     """
     json_str = send_openai_prompt(prompt, model_name="gpt-4o", temperature=0.3)
     try:
         fill_data = json.loads(json_str)
-        # 若 LLM 未返回相应字段，则使用用户输入
-        filled_query = query_template.format(
-            reptile=fill_data.get("reptile", reptile),
-            county=fill_data.get("county", county)
-        )
-        return filled_query
     except Exception as e:
-        # 若解析失败，则直接用用户输入填充
-        return query_template.format(reptile=reptile, county=county)
+        fill_data = {"node_label": node_label, "county": county}
+    if "node_label" not in fill_data:
+        fill_data["node_label"] = node_label
+    if "county" not in fill_data:
+        fill_data["county"] = county
+    filled_query = query_template.format(node_label=fill_data["node_label"], county=fill_data["county"])
+    return filled_query
 
-# 如果有任务要求，则调用 LLM 分析查询结果
-def analyze_data_with_task(kg_data, task, reptile, county):
+# 若有任务要求，则利用 LLM 对查询到的数据进行分析
+def analyze_data_with_task(kg_data, task, animal, county):
     prompt = f"""
 Based on the following Neo4j query results: {kg_data},
 please provide a detailed analysis for the wildlife management task "{task}".
-The data is from reptile "{reptile}" observed in a county containing "{county}".
+The data is from animal category "{animal}" observed in a county containing "{county}".
 Output only the analysis result.
     """
     return send_openai_prompt(prompt, model_name="gpt-4o", temperature=0.5)
@@ -140,7 +145,7 @@ if "keep_alive_started" not in st.session_state:
 
 # 页面展示
 st.title("Wildlife Knowledge Assistant 🐾")
-st.write("A bot to assist you with wildlife knowledge and Neo4j-powered queries using selection mode only.")
+st.write("使用选择模式查询动物数据，并可进行后续任务分析。")
 
 if "show_intro" not in st.session_state:
     st.session_state["show_intro"] = False
@@ -148,39 +153,42 @@ if st.sidebar.button("ℹ️ What is this bot?"):
     st.session_state["show_intro"] = not st.session_state["show_intro"]
 if st.session_state["show_intro"]:
     st.sidebar.markdown("""
-    ### Welcome to Wildlife Knowledge Assistant 🐾
-    This bot lets you query wildlife data using Neo4j by selecting:
-    - A county name
-    - A reptile name
-    Optionally, you can specify a task (e.g., Data Analysis or Conservation Management) to analyze the retrieved data.
+    ### 欢迎使用 Wildlife Knowledge Assistant 🐾
+    本工具允许您通过选择以下参数进行查询：
+    - 输入 county 名称
+    - 选择动物类别（Reptile、Amphibian、Fish、Bird）
+    如有需要，可选择具体任务（例如 Data Analysis 或 Conservation Management），
+    则系统将对查询到的数据进行进一步分析。
     
-    Enjoy exploring the wildlife knowledge base! 🌿
+    请确保数据库中 Location 节点的 name 属性与输入的 county 匹配，
+    以及相应动物节点（如 Reptile_name）中包含正确的动物名称。
+    
+    祝您使用愉快！
     """)
 
-# 只保留 Advanced Selection 模式
-st.markdown("### Please provide your selection")
-county_name = st.text_input("Enter county name", key="county")
-reptile_options = ["Select a reptile", "Alligator", "Turtle", "Lizard", "Snake"]
-selected_reptile = st.selectbox("Select reptile name", reptile_options, key="reptile")
+st.markdown("### 请选择查询条件")
+county_name = st.text_input("请输入 county 名称", key="county")
+animal_options = ["Select an animal", "Reptile", "Amphibian", "Fish", "Bird"]
+selected_animal = st.selectbox("请选择动物类别", animal_options, key="animal")
 task_options = ["No further task", "Data Analysis", "Conservation Management"]
-selected_task = st.selectbox("Select task (optional)", task_options, key="task")
+selected_task = st.selectbox("请选择任务（可选）", task_options, key="task")
 
-if st.button("Submit Query", key="submit_query"):
-    if selected_reptile == "Select a reptile" or county_name.strip() == "":
-        st.write("Please select a valid reptile and enter a county name.")
+if st.button("提交查询", key="submit_query"):
+    if selected_animal == "Select an animal" or county_name.strip() == "":
+        st.write("请正确选择动物类别并输入 county 名称。")
     else:
-        # 构造结构化查询字符串（仅用于展示信息）
-        structured_query = f"Species: Reptile | Reptile Name: {selected_reptile} | County: {county_name}"
+        # 构造结构化查询字符串（仅用于展示）
+        structured_query = f"Animal: {selected_animal} | County: {county_name}"
         if selected_task != "No further task":
             structured_query += f" | Task: {selected_task}"
-        st.write("Structured Query:", structured_query)
-        # 生成填空后的 Neo4j 查询
-        neo4j_query = generate_query_from_template(selected_reptile, county_name)
-        st.write("Generated Neo4j Query:", neo4j_query)
+        st.write("结构化查询：", structured_query)
+        # 利用 LLM 填充模板生成 Neo4j 查询
+        neo4j_query = generate_query_from_template(selected_animal, county_name)
+        st.write("生成的 Neo4j 查询：", neo4j_query)
         # 执行查询
         kg_data = query_neo4j(neo4j_query)
-        st.write("Query Output:", kg_data)
-        # 如果有任务要求，则调用 LLM 进行数据分析
+        st.write("查询结果：", kg_data)
+        # 如果有任务要求，则调用 LLM 对数据进行分析
         if selected_task != "No further task":
-            analysis_result = analyze_data_with_task(kg_data, selected_task, selected_reptile, county_name)
-            st.write("Analysis Result:", analysis_result)
+            analysis_result = analyze_data_with_task(kg_data, selected_task, selected_animal, county_name)
+            st.write("分析结果：", analysis_result)
