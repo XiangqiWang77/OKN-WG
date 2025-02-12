@@ -7,29 +7,25 @@ import requests
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from openai import OpenAI
-from toolbox.chains import (
-    configure_llm_only_chain,
-    prompt_cypher,
-    configure_qa_rag_chain,
-    generate_llava_output,
-    classfic,
-    web_agent_multimedia
-)
+from toolbox.chains import configure_llm_only_chain, prompt_cypher, configure_qa_rag_chain, generate_llava_output, classfic, web_agent_multimedia
 from toolbox.utils import ImageDownloader, convert_to_base64
 from toolbox.aspects import generate_aspect_chain, extract_keywords_from_question
-from toolbox.web_agent import web_search_agent, infer_node_scope_from_question
+from toolbox.web_agent import web_search_agent, infer_node_scope_from_question 
 
-# -----------------------------
-# Basic configuration
+# 加载环境变量
 # load_dotenv(".env")
+
+# Neo4j 数据库配置
 NEO4J_URI = st.secrets["NEO4J_URI"]
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
+# OpenAI 配置
 api_key = st.secrets["OPENAI_KEY"]
 client = OpenAI(api_key=api_key)
 
+# 加载 aspect 分类的 JSON 数据
 with open('aspects.json', 'r') as f:
     json_data = json.load(f)
 
@@ -39,6 +35,7 @@ def send_openai_prompt(prompt_text, model_name="gpt-4o", temperature=0.7):
             messages=[{"role": "user", "content": prompt_text}],
             model=model_name,
             temperature=temperature,
+            # max_tokens=token_limit
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
@@ -46,9 +43,9 @@ def send_openai_prompt(prompt_text, model_name="gpt-4o", temperature=0.7):
 
 def get_autocomplete_suggestions(question):
     prompt = f"""
-You are given a graph containing information about animals and locations. Complete the user's partially entered question.
-Input: {question}
-"""
+    You are given a graph containing information about animals and locations in Florida. Complete the user's partially entered question.
+    Input: {question}
+    """
     return send_openai_prompt(prompt)
 
 def load_llm(llm_name: str):
@@ -69,7 +66,7 @@ def display_images(urls):
     for i, url in enumerate(urls):
         try:
             headers = {
-                "User-Agent": "MyImageFetcher/1.0 (https://yourapp.example/; youremail@example.com)",
+                "User-Agent": "MyImageFetcher/1.0 (https://wildlifelookup.streamlit.app/; xwang76@nd.edu)",
                 "Referer": "https://www.wikimedia.org/"
             }
             response = requests.get(url, headers=headers, timeout=10)
@@ -94,26 +91,21 @@ def chat_input():
             st.write(response)
 
 def mode_select() -> list:
-    options = [
-        "Regular Response",
-        "AI as Translator to KN-Wildlife",
-        "AI as Toolbox for Aspect-Based Question",
-        "AI as an Online(Wikidata) Searching Agent"
-    ]
-    multimedia_options = ["Text Only", "Text and Images"]
-    selected_multimedia_mode = st.radio("Select output mode", multimedia_options, horizontal=True)
+    options = ["Regular Response", "AI as Translator to KN-Wildlife", "AI as Toolbox for Aspect-Based Question", "AI as an Online(Wikidata) Searching Agent"]
+    multimediaoptions = ["Text Only", "Text and Images"]
+    selected_multimedia_mode = st.radio("Select output mode", multimediaoptions, horizontal=True)
     mode_selected = st.radio("Select external sources", options, horizontal=True)
     return [mode_selected, selected_multimedia_mode]
 
 def extract_keywords_from_response(response_text):
     prompt = f"""
-Extract the top 5 most relevant keywords or entities from the following text.
-Focus on nouns, names, or important terms relevant to the context.
+    Extract the top 5 most relevant keywords or entities from the following text.
+    Focus on nouns, names, or important terms relevant to the context.
 
-Text: {response_text}
+    Text: {response_text}
 
-Return the keywords as a Python list of strings.
-"""
+    Return the keywords as a Python list of strings.
+    """
     try:
         keywords_response = send_openai_prompt(prompt, model_name="gpt-4", temperature=0.5)
         keywords = eval(keywords_response.strip())
@@ -165,7 +157,7 @@ def search_images_from_keywords(keywords):
         LIMIT 1
         """
         headers = {
-            "User-Agent": "MyImageFetcher/1.0 (https://yourapp.example/; youremail@example.com)"
+            "User-Agent": "MyImageFetcher/1.0 (https://wildlifelookup.streamlit.app/; xwang76@nd.edu)"
         }
         try:
             response = requests.get(
@@ -186,7 +178,7 @@ def search_images_from_keywords(keywords):
             print(f"Error fetching image for keyword '{keyword}': {e}")
     return image_urls
 
-# Helper function to construct a valid Cypher query from structured parameters.
+# 新增：构造结构化 Cypher 查询函数，基于 species 与 county 参数生成查询语句
 def construct_structured_cypher_query(species, county, multi_option=0):
     species_map = {
        "Fish": "Fish_name",
@@ -198,22 +190,24 @@ def construct_structured_cypher_query(species, county, multi_option=0):
     if multi_option == 1:
         cypher_query = f'''
         MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
-        WHERE c.name = "{county}"
+        WHERE c.name = '{county}'
         RETURN s.name AS species_name, s.multimedia AS multimedia, c.name AS county_name
         '''
     else:
         cypher_query = f'''
         MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
-        WHERE c.name = "{county}"
+        WHERE c.name = '{county}'
         RETURN s, c
         '''
     return cypher_query
 
-# Updated handle_chat_mode function
-def handle_chat_mode(mode_info, user_input):
-    # Check if the query is a structured query (Advanced Selection Mode) by looking for "Task:"
+# 处理不同模式下的逻辑
+def handle_chat_mode(name, user_input):
+    print(name[0])
+    result = None
+
+    # 若检测到结构化查询（包含 "Task:" 字样），只取前两个参数
     if "Task:" in user_input:
-        # Expected format: "Species: X | County: Y | Task: Z"
         parts = [part.strip() for part in user_input.split("|")]
         if len(parts) >= 3:
             species_value = parts[0].split(":", 1)[1].strip() if ":" in parts[0] else ""
@@ -221,14 +215,13 @@ def handle_chat_mode(mode_info, user_input):
             task_value = parts[2].split(":", 1)[1].strip() if ":" in parts[2] else ""
         else:
             species_value = county_value = task_value = ""
-        # Construct a valid Cypher query using species and county
+        # 构造有效的 Cypher 查询（只使用 species 与 county）
         cypher_query = construct_structured_cypher_query(species_value, county_value, multi_option=0)
         kg_data = query_neo4j(cypher_query)
-        # If the task is "Data Display", simply display the data
+        # 若任务为 Data Display，则直接展示数据；否则调用 LLM 处理
         if "data display" in task_value.lower():
             result = f"Data Retrieved: {kg_data}"
         else:
-            # Otherwise, ask the LLM to process the retrieved data for the given task
             prompt = (
                 f"Based on the retrieved data: {kg_data}, please provide a detailed answer "
                 f"for the following wildlife management task: {task_value}. "
@@ -236,12 +229,13 @@ def handle_chat_mode(mode_info, user_input):
             )
             result = send_openai_prompt(prompt)
         return result
+
     else:
-        # Non-structured queries are handled with the original logic
-        if mode_info[0] == "Regular Response":
-            if mode_info[1] == "Text Only":
+        # 非结构化查询沿用原有逻辑
+        if name[0] == "Regular Response":
+            if name[1] == "Text Only":
                 result = configure_llm_only_chain(user_input)
-            elif mode_info[1] == "Text and Images":
+            elif name[1] == "Text and Images":
                 result = configure_llm_only_chain(user_input)
                 keywords = extract_keywords_from_response(result)
                 image_urls = search_images_from_keywords(keywords)
@@ -249,11 +243,11 @@ def handle_chat_mode(mode_info, user_input):
                     display_images(image_urls)
                 else:
                     st.write("No images found for the extracted keywords.")
-        elif mode_info[0] == "AI as Translator to KN-Wildlife":
+        elif name[0] == "AI as Translator to KN-Wildlife":
             translate_function = prompt_cypher(llm)
             temp_result = translate_function(user_input)
             print(temp_result)
-            if mode_info[1] == "Text Only":
+            if name[1] == "Text Only":
                 rag_chain = configure_qa_rag_chain(
                     llm,
                     query=temp_result,
@@ -262,7 +256,7 @@ def handle_chat_mode(mode_info, user_input):
                     password=NEO4J_PASSWORD
                 )
                 result = rag_chain
-            elif mode_info[1] == "Text and Images":
+            elif name[1] == "Text and Images":
                 kg_output = query_neo4j(temp_result)
                 print("kg_output", kg_output)
                 feed_result = generate_llava_output(user_input, kg_output)
@@ -273,17 +267,17 @@ def handle_chat_mode(mode_info, user_input):
                     display_images(image_urls)
                 else:
                     st.write("No images found for the extracted keywords.")
-        elif mode_info[0] == "AI as Toolbox for Aspect-Based Question":
+        elif name[0] == "AI as Toolbox for Aspect-Based Question":
             temp_chain = generate_aspect_chain(
                 question=user_input,
-                multimedia_option=mode_info[1],
+                multimedia_option=name[1],
                 llm_name=llm,
                 vllm_name=None
             )
             feed_result = temp_chain
-            if mode_info[1] == "Text Only":
+            if name[1] == "Text Only":
                 result = feed_result["answer"]
-            elif mode_info[1] == "Text and Images":
+            elif name[1] == "Text and Images":
                 result = feed_result["answer"]
                 keywords = extract_keywords_from_response(result)
                 image_urls = search_images_from_keywords(keywords)
@@ -291,7 +285,7 @@ def handle_chat_mode(mode_info, user_input):
                     display_images(image_urls)
                 else:
                     st.write("No images found for the extracted keywords.")
-        elif mode_info[0] == "AI as an Online(Wikidata) Searching Agent":
+        elif name[0] == "AI as an Online(Wikidata) Searching Agent":
             print("Function calling")
             node_scope = infer_node_scope_from_question(llm, user_input)
             print("node scope is", node_scope)
@@ -300,15 +294,15 @@ def handle_chat_mode(mode_info, user_input):
                 question=user_input,
                 node_scope=node_scope
             )
-            final_str = (
+            Final_str = (
                 f"Question: {user_input}. The web retrieval agent returns: {agent_result}. "
                 "Please provide an answer."
             )
-            print(final_str)
-            if mode_info[1] == "Text Only":
-                result = send_openai_prompt(final_str)
-            elif mode_info[1] == "Text and Images":
-                result = send_openai_prompt(final_str)
+            print(Final_str)
+            if name[1] == "Text Only":
+                result = send_openai_prompt(Final_str)
+            elif name[1] == "Text and Images":
+                result = send_openai_prompt(Final_str)
                 keywords = extract_keywords_from_response(result)
                 image_urls = search_images_from_keywords(keywords)
                 if image_urls:
@@ -321,7 +315,6 @@ def handle_chat_mode(mode_info, user_input):
 
 import time
 import threading
-
 def keep_neo4j_alive(interval=300):
     def query():
         with driver.session() as session:
@@ -370,8 +363,8 @@ if st.session_state["show_intro"]:
     ### Welcome to Wildlife Knowledge Assistant 🐾
     This bot is designed to help you:
     - Query and visualize wildlife-related data using **Neo4j**.
-    - Ask complex questions and receive detailed answers powered by **LLMs**.
-    - Explore multimedia (text and images) information related to your queries.
+    - Ask complex questions and receive detailed answers powered by **LLM**.
+    - Explore multimedia (text and images) information related to your questions.
     - Discover more about wildlife in the United States and beyond.
 
     **Features**:
@@ -380,8 +373,8 @@ if st.session_state["show_intro"]:
     - **Neo4j Database**: Provides real-time data querying and visualization.
 
     **How to use**:
-    1. Type your question or choose one of the selection modes below.
-    2. Select a response mode and hit submit.
+    1. Type your question in the input box.
+    2. Select a mode and hit submit.
     3. Explore the detailed results with optional images.
 
     Enjoy exploring the wildlife knowledge base! 🌿
@@ -398,15 +391,12 @@ if query:
     st.write(result)
 else:
     if input_mode == "Advanced Selection Mode":
-        # Advanced Selection Mode: select species, enter county name, select a task
+        # Advanced Selection Mode: 选择 species、输入 county、选择任务
         species_options = ["Select a species", "Fish", "Reptile", "Amphibian", "Birds"]
         selected_species = st.selectbox("Select species", species_options, key="species")
-        
         county_name = st.text_input("Enter county name", key="county")
-        
         target_options = ["Select a task", "Data Display", "Data Analysis", "Conservation Management"]
         selected_target = st.selectbox("Select task", target_options, key="target")
-        
         if st.button("Submit Advanced Query", key="submit_advanced"):
             query_parts = []
             if selected_species != "Select a species":
@@ -419,7 +409,7 @@ else:
             result = handle_chat_mode(mode_info, structured_query)
             st.write(result)
     else:
-        # Free Text Mode: simply enter your question.
+        # Free Text Mode
         user_input_text = st.text_input("What would you like to know?", key="user_input_key")
         if user_input_text:
             result = handle_chat_mode(mode_info, user_input_text)
