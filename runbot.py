@@ -7,7 +7,7 @@ import requests
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from openai import OpenAI
-from toolbox.chains import (
+from toolbox.newchains import (
     configure_llm_only_chain,
     prompt_cypher,
     configure_qa_rag_chain,
@@ -16,8 +16,8 @@ from toolbox.chains import (
     web_agent_multimedia
 )
 from toolbox.utils import ImageDownloader, convert_to_base64
-from toolbox.aspects import generate_aspect_chain, extract_keywords_from_question
-from toolbox.web_agent import web_search_agent, infer_node_scope_from_question
+from toolbox.newaspects import generate_aspect_chain, extract_keywords_from_question
+from toolbox.newweb_agent import web_search_agent, infer_node_scope_from_question
 
 # -----------------------------
 # Basic configuration (adjust as needed)
