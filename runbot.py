@@ -7,7 +7,7 @@ import requests
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from openai import OpenAI
-from toolbox.chains import (
+from toolbox.newchains import (
     configure_llm_only_chain,
     prompt_cypher,
     configure_qa_rag_chain,
@@ -16,8 +16,8 @@ from toolbox.chains import (
     web_agent_multimedia
 )
 from toolbox.utils import ImageDownloader, convert_to_base64
-from toolbox.aspects import generate_aspect_chain, extract_keywords_from_question
-from toolbox.web_agent import web_search_agent, infer_node_scope_from_question
+from toolbox.newaspects import generate_aspect_chain, extract_keywords_from_question
+from toolbox.newweb_agent import web_search_agent, infer_node_scope_from_question
 
 # -----------------------------
 # Basic configuration
@@ -186,33 +186,58 @@ def search_images_from_keywords(keywords):
             print(f"Error fetching image for keyword '{keyword}': {e}")
     return image_urls
 
+# Helper function to construct a valid Cypher query from structured parameters.
+def construct_structured_cypher_query(species, county, multi_option=0):
+    species_map = {
+       "Fish": "Fish_name",
+       "Reptile": "Reptile_name",
+       "Amphibian": "Amphibian_name",
+       "Birds": "Bird_name"
+    }
+    node_label = species_map.get(species, "Reptile_name")
+    if multi_option == 1:
+        cypher_query = f'''
+        MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
+        WHERE c.name = "{county}"
+        RETURN s.name AS species_name, s.multimedia AS multimedia, c.name AS county_name
+        '''
+    else:
+        cypher_query = f'''
+        MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
+        WHERE c.name = "{county}"
+        RETURN s, c
+        '''
+    return cypher_query
+
 # Updated handle_chat_mode function
 def handle_chat_mode(mode_info, user_input):
     # Check if the query is a structured query (Advanced Selection Mode) by looking for "Task:"
     if "Task:" in user_input:
+        # Expected format: "Species: X | County: Y | Task: Z"
         parts = [part.strip() for part in user_input.split("|")]
         if len(parts) >= 3:
-            # Expected parts: "Species: X", "County: Y", "Task: Z"
-            species_part = parts[0]
-            county_part = parts[1]
-            task_part = parts[2]
+            species_value = parts[0].split(":", 1)[1].strip() if ":" in parts[0] else ""
+            county_value = parts[1].split(":", 1)[1].strip() if ":" in parts[1] else ""
+            task_value = parts[2].split(":", 1)[1].strip() if ":" in parts[2] else ""
         else:
-            species_part = county_part = task_part = ""
-        # Use only species and county to retrieve data
-        new_query = f"{species_part} | {county_part}"
-        kg_data = query_neo4j(new_query)
-        if "data display" in task_part.lower():
+            species_value = county_value = task_value = ""
+        # Construct a valid Cypher query using species and county
+        cypher_query = construct_structured_cypher_query(species_value, county_value, multi_option=0)
+        kg_data = query_neo4j(cypher_query)
+        # If the task is "Data Display", simply display the data
+        if "data display" in task_value.lower():
             result = f"Data Retrieved: {kg_data}"
         else:
+            # Otherwise, ask the LLM to process the retrieved data for the given task
             prompt = (
                 f"Based on the retrieved data: {kg_data}, please provide a detailed answer "
-                f"for the following wildlife management task: {task_part}. "
-                f"Question (using species and county only): {new_query}"
+                f"for the following wildlife management task: {task_value}. "
+                f"Data comes from species: {species_value} in county: {county_value}."
             )
             result = send_openai_prompt(prompt)
         return result
     else:
-        # For non-structured queries, use the existing handling
+        # Non-structured queries are handled with the original logic
         if mode_info[0] == "Regular Response":
             if mode_info[1] == "Text Only":
                 result = configure_llm_only_chain(user_input)
