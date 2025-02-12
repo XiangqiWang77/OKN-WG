@@ -7,147 +7,147 @@ import requests
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from openai import OpenAI
-from toolbox.chains import (
-    configure_llm_only_chain,
-    prompt_cypher,
-    configure_qa_rag_chain,
-    generate_llava_output,
-    classfic,
-    web_agent_multimedia
-)
+from toolbox.chains import configure_llm_only_chain, prompt_cypher, configure_qa_rag_chain, generate_llava_output, classfic, web_agent_multimedia
 from toolbox.utils import ImageDownloader, convert_to_base64
 from toolbox.aspects import generate_aspect_chain, extract_keywords_from_question
-from toolbox.web_agent import web_search_agent, infer_node_scope_from_question
+from toolbox.web_agent import web_search_agent, infer_node_scope_from_question 
 
-# -----------------------------
-# Basic configuration (adjust as needed)
-# load_dotenv(".env")
-NEO4J_URI = st.secrets["NEO4J_URI"]
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
+# 加载环境变量
+#load_dotenv(".env")
+
+# Neo4j 数据库配置
+NEO4J_URI=st.secrets["NEO4J_URI"]
+NEO4J_USER="neo4j"
+NEO4J_PASSWORD=st.secrets["NEO4J_PASSWORD"]
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
+# OpenAI 配置
 api_key = st.secrets["OPENAI_KEY"]
 client = OpenAI(api_key=api_key)
 
+# 加载 aspect 分类的 JSON 数据
 with open('aspects.json', 'r') as f:
     json_data = json.load(f)
 
+# 调用 OpenAI 生成回答
 def send_openai_prompt(prompt_text, model_name="gpt-4o", temperature=0.7):
     try:
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt_text}],
             model=model_name,
             temperature=temperature,
+            #max_tokens=token_limit
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Request failed: {e}"
-# -----------------------------
 
-# -----------------------------
-# [NEW] Function to convert a raw question into multiple-choice options.
-def convert_question_to_multiple_choice(question):
-    """
-    Uses OpenAI to convert the input question into a multiple-choice question with 4 candidate options.
-    Returns a list of strings, e.g.: ["Option 1", "Option 2", "Option 3", "Option 4"]
-    """
-    prompt = f"""
-Convert the following question into a multiple-choice question by generating 4 candidate options for the user to choose from.
-Return the result in a JSON array format.
-Question: {question}
-Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
-"""
-    response = send_openai_prompt(prompt, model_name="gpt-4", temperature=0.7)
-    try:
-        options = json.loads(response)
-        if not isinstance(options, list):
-            raise ValueError("Result is not a list")
-        return options
-    except Exception as e:
-        st.error(f"Error converting to multiple-choice format, using original question instead. Error: {e}")
-        return [question]
-# -----------------------------
-
+# 自动补全问题
 def get_autocomplete_suggestions(question):
     prompt = f"""
-You are given a graph containing information about animals and locations. Complete the user's partially entered question.
-Input: {question}
-"""
+    You are given a graph containing information about animals and locations in Florida. Complete the user's partially entered question.
+    Input: {question}
+    """
     return send_openai_prompt(prompt)
 
+# LLM加载
 def load_llm(llm_name: str):
     return lambda prompt: send_openai_prompt(prompt, model_name=llm_name)
 
 llm = load_llm("gpt-4o")
 
+# 执行 Neo4j 查询
 def query_neo4j(cypher_query, params=None):
     with driver.session() as session:
         result = session.run(cypher_query, params or {})
         return [record for record in result]
 
+# 处理图像下载和展示
 def display_images(urls):
     if not urls:
         st.write("No images available.")
         return
+
     cols = st.columns(len(urls))
     for i, url in enumerate(urls):
         try:
+            # 设置 User-Agent 和 Referer
             headers = {
-                "User-Agent": "MyImageFetcher/1.0 (https://yourapp.example/; youremail@example.com)",
+                "User-Agent": "MyImageFetcher/1.0 (https://wildlifelookup.streamlit.app/; xwang76@nd.edu)",
                 "Referer": "https://www.wikimedia.org/"
             }
+
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
+
+            # 检查 Content-Type
             content_type = response.headers.get("Content-Type", "")
             if not content_type.startswith("image/"):
                 raise ValueError(f"URL does not point to an image: {url}")
+
+            # 显示图片
             image = Image.open(BytesIO(response.content)).convert("RGB")
             cols[i].image(image, caption=f"Image {i+1}", use_column_width=True)
         except Exception as e:
+            # 跳过无法加载的图片
             cols[i].write(f"Failed to load image {i+1}: {e}")
 
+
+
+# 处理聊天输入
 def chat_input():
     user_input_text = st.text_input("What do you want to know about wildlife in the US?", key="user_input_text", value="")
     if user_input_text:
         suggestion = get_autocomplete_suggestions(user_input_text)
         st.markdown(f"**Suggestion:** {suggestion}")
+
         if st.button("Accept Suggestion"):
             user_input_text = suggestion
+        
         response = llm(user_input_text)
         with st.chat_message("assistant"):
             st.write(response)
 
+# RAG模式选择
 def mode_select() -> list:
-    options = [
-        "Regular Response",
-        "AI as Translator to KN-Wildlife",
-        "AI as Toolbox for Aspect-Based Question",
-        "AI as an Online(Wikidata) Searching Agent"
-    ]
-    multimedia_options = ["Text Only", "Text and Images"]
-    selected_multimedia_mode = st.radio("Select output mode", multimedia_options, horizontal=True)
+    options = ["Regular Response", "AI as Translator to KN-Wildlife", "AI as Toolbox for Aspect-Based Question", "AI as a Online(Wikidata) Searching Agent"]
+    multimediaoptions = ["Text Only", "Text and Images"]
+
+    selected_multimedia_mode = st.radio("Select output mode", multimediaoptions, horizontal=True)
     mode_selected = st.radio("Select external sources", options, horizontal=True)
+    
     return [mode_selected, selected_multimedia_mode]
 
 def extract_keywords_from_response(response_text):
+    """
+    Extracts important keywords or entities from the LLM-generated response using OpenAI GPT.
+    """
+    # Prompt for LLM to extract keywords
     prompt = f"""
-Extract the top 5 most relevant keywords or entities from the following text.
-Focus on nouns, names, or important terms relevant to the context.
+    Extract the top 5 most relevant keywords or entities from the following text.
+    Focus on nouns, names, or important terms relevant to the context.
 
-Text: {response_text}
+    Text: {response_text}
 
-Return the keywords as a Python list of strings.
-"""
+    Return the keywords as a Python list of strings.
+    """
+
     try:
+        # Call the LLM API to process the prompt
         keywords_response = send_openai_prompt(prompt, model_name="gpt-4", temperature=0.5)
+
+        # Ensure the result is a Python list (convert string output to Python object)
         keywords = eval(keywords_response.strip())
         return keywords
+
     except Exception as e:
         print(f"Error extracting keywords: {e}")
-        return []
+        return []  # Fallback to an empty list if extraction fails
 
 def get_wikidata_id(entity_name):
+    """
+    Retrieves the Wikidata entity ID for a given entity name using Wikidata API.
+    """
     url = "https://www.wikidata.org/w/api.php"
     params = {
         "action": "wbsearchentities",
@@ -155,20 +155,30 @@ def get_wikidata_id(entity_name):
         "format": "json",
         "search": entity_name
     }
+
     try:
         response = requests.get(url, params=params)
         response.raise_for_status()
         data = response.json()
+
         if data.get('search'):
+            # Return the first matching ID with the highest relevance
             return data['search'][0]['id']
     except Exception as e:
         print(f"Error fetching Wikidata ID for '{entity_name}': {e}")
-    return None
+    
+    return None  # Return None if no entity ID is found
 
 def validate_image_url(url, headers):
+    """
+    验证图片 URL 是否有效。
+    返回 True 如果 URL 指向有效的图片文件，否则返回 False。
+    """
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
+
+        # 检查 Content-Type 是否以 image/ 开头
         content_type = response.headers.get("Content-Type", "")
         if content_type.startswith("image/"):
             return True
@@ -176,23 +186,36 @@ def validate_image_url(url, headers):
         print(f"Error validating image URL '{url}': {e}")
     return False
 
+
 def search_images_from_keywords(keywords):
+    """
+    使用 Wikidata 的 SPARQL 查询端点，根据提取的关键词搜索图片。
+    返回有效的图片 URL 列表，自动跳过加载失败的图片。
+    """
     image_urls = []
     wikidata_sparql_endpoint = "https://query.wikidata.org/sparql"
+
     for keyword in keywords[:5]:
+        # Step 1: 获取关键词的 Wikidata 实体 ID
         entity_id = get_wikidata_id(keyword)
         if not entity_id:
-            continue
+            continue  # 如果找不到实体 ID，跳过此关键词
+
+        # Step 2: 构建 SPARQL 查询，查找实体的图片（P18 属性）
         query = f"""
         SELECT ?image WHERE {{
           wd:{entity_id} wdt:P18 ?image.
         }}
         LIMIT 1
         """
+
+        # 设置 User-Agent 头部，确保符合 Wikidata 的用户代理策略
         headers = {
-            "User-Agent": "MyImageFetcher/1.0 (https://yourapp.example/; youremail@example.com)"
+            "User-Agent": "MyImageFetcher/1.0 (https://wildlifelookup.streamlit.app/; xwang76@nd.edu)"
         }
+
         try:
+            # 发送请求
             response = requests.get(
                 wikidata_sparql_endpoint,
                 params={"query": query, "format": "json"},
@@ -200,105 +223,162 @@ def search_images_from_keywords(keywords):
             )
             response.raise_for_status()
             data = response.json()
+
+            # 从返回的数据中提取图片 URL
             for result in data["results"]["bindings"]:
                 if "image" in result:
                     image_url = result["image"]["value"]
+
+                    # 测试图片 URL 是否有效
                     if validate_image_url(image_url, headers):
                         image_urls.append(image_url)
                     else:
                         print(f"Invalid image URL (skipped): {image_url}")
+
         except Exception as e:
             print(f"Error fetching image for keyword '{keyword}': {e}")
+
     return image_urls
 
-def handle_chat_mode(mode_info, user_input):
-    # mode_info is a list: [selected_mode, multimedia_mode]
-    print(mode_info[0])
+
+
+
+# 处理不同模式下的逻辑
+def handle_chat_mode(name, user_input):
+    print(name[0])
     result = None
-    if mode_info[0] == "Regular Response":
-        if mode_info[1] == "Text Only":
+
+    if name[0] == "Regular Response":
+        if name[1] == "Text Only":
             result = configure_llm_only_chain(user_input)
-        elif mode_info[1] == "Text and Images":
+        elif name[1] == "Text and Images":
+            # Step 1: Generate the textual response
             result = configure_llm_only_chain(user_input)
+
+            # Step 2: Extract keywords/entities from the generated text
             keywords = extract_keywords_from_response(result)
+
+            # Step 3: Search for images based on the extracted keywords
             image_urls = search_images_from_keywords(keywords)
+
+            # Step 4: Display images if available
             if image_urls:
                 display_images(image_urls)
             else:
                 st.write("No images found for the extracted keywords.")
-    elif mode_info[0] == "AI as Translator to KN-Wildlife":
-        translate_function = prompt_cypher(llm)
-        temp_result = translate_function(user_input)
-        print(temp_result)
-        if mode_info[1] == "Text Only":
+
+    elif name[0] == "AI as Translator to KN-Wildlife":
+        translate_function = prompt_cypher(llm)  # 获取生成函数
+        temp_result = translate_function(user_input)  # 调用生成函数获取 Cypher 查询
+
+        print(temp_result)  # 检查 Cypher 查询是否正确生成
+
+        if name[1] == "Text Only":
             rag_chain = configure_qa_rag_chain(
-                llm,
-                query=temp_result,
+                llm,  # 第一个参数传递 llm
+                query=temp_result,  # 传递生成的 Cypher 查询
                 Graph_url=NEO4J_URI,
                 username=NEO4J_USER,
                 password=NEO4J_PASSWORD
             )
             result = rag_chain
-        elif mode_info[1] == "Text and Images":
+
+        elif name[1] == "Text and Images":
+            # 执行图谱查询
             kg_output = query_neo4j(temp_result)
+
             print("kg_output", kg_output)
+
+            # 使用LLaVA输出处理多媒体数据
             feed_result = generate_llava_output(user_input, kg_output)
             result = feed_result["answer"]
+
+            # 展示多媒体（图片等）
             keywords = extract_keywords_from_response(result)
+
+            # Step 3: Search for images based on the extracted keywords
             image_urls = search_images_from_keywords(keywords)
+
+            # Step 4: Display images if available
             if image_urls:
                 display_images(image_urls)
             else:
                 st.write("No images found for the extracted keywords.")
-    elif mode_info[0] == "AI as Toolbox for Aspect-Based Question":
+
+    elif name[0] == "AI as Toolbox for Aspect-Based Question":
+        #aspect_category = classfic(user_input, json_data, llm)
         temp_chain = generate_aspect_chain(
             question=user_input,
-            multimedia_option=mode_info[1],
+            multimedia_option=name[1],
+            #aspect=aspect_category,
             llm_name=llm,
             vllm_name=None
         )
         feed_result = temp_chain
-        if mode_info[1] == "Text Only":
+
+        if name[1] == "Text Only":
             result = feed_result["answer"]
-        elif mode_info[1] == "Text and Images":
+        elif name[1] == "Text and Images":
             result = feed_result["answer"]
             keywords = extract_keywords_from_response(result)
+
+            # Step 3: Search for images based on the extracted keywords
             image_urls = search_images_from_keywords(keywords)
+
+            # Step 4: Display images if available
             if image_urls:
                 display_images(image_urls)
             else:
                 st.write("No images found for the extracted keywords.")
-    elif mode_info[0] == "AI as an Online(Wikidata) Searching Agent":
+
+    elif name[0] == "AI as a Online(Wikidata) Searching Agent":
         print("Function calling")
+
+        # 通过 LLM 推断可能的节点范围
         node_scope = infer_node_scope_from_question(llm, user_input)
+
         print("node scope is", node_scope)
+        # 执行 web search agent，传递节点范围限制
         agent_result = web_search_agent(
             llm=llm,
             question=user_input,
-            node_scope=node_scope
+            node_scope=node_scope  # 传递节点范围
         )
-        final_str = (
-            f"Question: {user_input}. The web retrieval agent returns: {agent_result}. "
+
+        # 拼接最终查询
+        Final_str = (
+            f"question is {user_input} The web retrieval agent is {agent_result} "
             "Please provide an answer."
         )
-        print(final_str)
-        if mode_info[1] == "Text Only":
-            result = send_openai_prompt(final_str)
-        elif mode_info[1] == "Text and Images":
-            result = send_openai_prompt(final_str)
+
+        print(Final_str)
+
+        if name[1] == "Text Only":
+            result = send_openai_prompt(Final_str)
+        elif name[1] == "Text and Images":
+            result = send_openai_prompt(Final_str)
+            # Add logic to process multimedia retrieval if required
+            # Step 2: Extract keywords/entities from the generated text
             keywords = extract_keywords_from_response(result)
+
+            # Step 3: Search for images based on the extracted keywords
             image_urls = search_images_from_keywords(keywords)
+
+            # Step 4: Display images if available
             if image_urls:
                 display_images(image_urls)
             else:
                 st.write("No images found for the extracted keywords.")
+
+    # 增加兜底机制
     if result is None:
         result = "No result generated. Please refine your question or try a different mode."
+
     return result
 
 import time
+#from streamlit_modal import Modal  # 使用 `streamlit-modal` 插件实现弹出框
 import threading
-
 def keep_neo4j_alive(interval=300):
     def query():
         with driver.session() as session:
@@ -307,38 +387,54 @@ def keep_neo4j_alive(interval=300):
                 print("Keep-alive query sent to Neo4j.")
             except Exception as e:
                 print(f"Neo4j keep-alive query failed: {e}")
+
     while True:
         query()
         time.sleep(interval)
 
+# 保持 Streamlit 应用的运行
 def keep_streamlit_alive():
     while True:
         time.sleep(1)
         st.experimental_rerun()
 
+# 在后台线程中启动 keep-alive 功能
 def start_keep_alive_tasks():
+    # 启动 Neo4j 保活线程
     neo4j_thread = threading.Thread(target=keep_neo4j_alive, daemon=True)
     neo4j_thread.start()
+
+    # 启动 Streamlit 保活线程
     streamlit_thread = threading.Thread(target=keep_streamlit_alive, daemon=True)
     streamlit_thread.start()
 
+# 初始化保活任务
 if "keep_alive_started" not in st.session_state:
     start_keep_alive_tasks()
     st.session_state["keep_alive_started"] = True
 
+
+# 获取 URL 查询参数
+# 获取 URL 查询参数
 query_params = st.query_params
-query = query_params.get("query", None)
+query = query_params.get("query", None)  # 直接获取 "query" 的值
+
+# 确保 query 是字符串而不是列表
 if query:
     if isinstance(query, list):
-        query = " ".join(query)
+        query = " ".join(query)  # 将列表转换为字符串，防止截取问题
+
 st.write(f"**Query from URL:** {query}")
 
+# 页面布局
 st.title("Wildlife Knowledge Assistant 🐾")
 st.write("A bot to assist you with wildlife knowledge and Neo4j-powered queries.")
 
+# 图标和介绍逻辑
 if "show_intro" not in st.session_state:
     st.session_state["show_intro"] = False
 
+# 点击图标显示介绍信息
 if st.sidebar.button("ℹ️ What is this bot?"):
     st.session_state["show_intro"] = not st.session_state["show_intro"]
 
@@ -347,8 +443,8 @@ if st.session_state["show_intro"]:
     ### Welcome to Wildlife Knowledge Assistant 🐾
     This bot is designed to help you:
     - Query and visualize wildlife-related data using **Neo4j**.
-    - Ask complex questions and receive detailed answers powered by **LLMs**.
-    - Explore multimedia (text and images) information related to your queries.
+    - Ask complex questions and receive detailed answers powered by **LLM**.
+    - Explore multimedia (text and images) information related to your questions.
     - Discover more about wildlife in the United States and beyond.
 
     **Features**:
@@ -357,68 +453,30 @@ if st.session_state["show_intro"]:
     - **Neo4j Database**: Provides real-time data querying and visualization.
 
     **How to use**:
-    1. Type your question or choose one of the selection modes below.
-    2. Select a response mode and hit submit.
+    1. Type your question in the input box.
+    2. Select a mode and hit submit.
     3. Explore the detailed results with optional images.
 
     Enjoy exploring the wildlife knowledge base! 🌿
     """)
 
-# -----------------------------
-# User input section with three input modes:
-# "Free Text", "Multiple-Choice Mode", and "Advanced Selection Mode".
-st.markdown("### Choose your input mode")
-input_mode = st.radio("Select input mode", options=["Free Text", "Multiple-Choice Mode", "Advanced Selection Mode"], key="input_mode")
+# 页面初始化
+#st.title("Wildlife Knowledge Assistant")
 
-mode_info = mode_select()
+name = mode_select()
+#user_input_text = st.text_input("What would you like to know?")
 
+# 防止两个对话框的逻辑
+user_input_text = None
+
+# 如果 URL 中存在 query 参数，则优先处理 URL 的 query 参数
 if query:
     st.write(f"**Query from URL:** {query}")
-    result = handle_chat_mode(mode_info, query)
+    result = handle_chat_mode(name, query)
     st.write(result)
 else:
-    if input_mode == "Multiple-Choice Mode":
-        # Multiple-Choice Mode: enter raw text, generate options, and select one.
-        raw_question = st.text_input("Enter your question (raw text)", key="raw_question")
-        if raw_question:
-            if st.button("Generate Options", key="generate_options"):
-                options = convert_question_to_multiple_choice(raw_question)
-                st.session_state["multiple_choice_options"] = options
-        if "multiple_choice_options" in st.session_state:
-            final_question = st.radio("Select the question you want to ask", st.session_state["multiple_choice_options"], key="final_question")
-            if st.button("Submit Question", key="submit_mc"):
-                result = handle_chat_mode(mode_info, final_question)
-                st.write(result)
-    elif input_mode == "Advanced Selection Mode":
-        # Advanced Selection Mode:
-        # 1. Select species (Fish, Reptile, Amphibian, Birds)
-        # 2. Enter county name (location)
-        # 3. Choose a start and an end date for the time period.
-        species_options = ["Select a species", "Fish", "Reptile", "Amphibian", "Birds"]
-        selected_species = st.selectbox("Select species", species_options, key="species")
-        
-        county_name = st.text_input("Enter county name", key="county")
-        
-        # Use date_input for start and end dates.
-        start_date = st.date_input("Start Date", key="start_date")
-        end_date = st.date_input("End Date", key="end_date")
-        
-        if st.button("Submit Advanced Query", key="submit_advanced"):
-            query_parts = []
-            if selected_species != "Select a species":
-                query_parts.append(f"Species: {selected_species}")
-            if county_name:
-                query_parts.append(f"County: {county_name}")
-            # Ensure both dates are selected; format them as strings.
-            if start_date and end_date:
-                query_parts.append(f"Time: {start_date} to {end_date}")
-            structured_query = " | ".join(query_parts)
-            result = handle_chat_mode(mode_info, structured_query)
-            st.write(result)
-    else:
-        # Free Text Mode: simply enter your question.
-        user_input_text = st.text_input("What would you like to know?", key="user_input_key")
-        if user_input_text:
-            result = handle_chat_mode(mode_info, user_input_text)
-            st.write(result)
-# -----------------------------
+    # 如果没有 URL 参数，显示输入框
+    user_input_text = st.text_input("What would you like to know?", key="user_input_key")
+    if user_input_text:
+        result = handle_chat_mode(name, user_input_text)
+        st.write(result)
