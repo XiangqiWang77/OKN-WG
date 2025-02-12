@@ -12,20 +12,20 @@ from toolbox.utils import ImageDownloader, convert_to_base64
 from toolbox.aspects import generate_aspect_chain, extract_keywords_from_question
 from toolbox.web_agent import web_search_agent, infer_node_scope_from_question 
 
-# 加载环境变量
+# Load environment variables if needed
 # load_dotenv(".env")
 
-# Neo4j 数据库配置
+# Neo4j configuration
 NEO4J_URI = st.secrets["NEO4J_URI"]
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-# OpenAI 配置
+# OpenAI configuration
 api_key = st.secrets["OPENAI_KEY"]
 client = OpenAI(api_key=api_key)
 
-# 加载 aspect 分类的 JSON 数据
+# Load aspects JSON
 with open('aspects.json', 'r') as f:
     json_data = json.load(f)
 
@@ -178,7 +178,7 @@ def search_images_from_keywords(keywords):
             print(f"Error fetching image for keyword '{keyword}': {e}")
     return image_urls
 
-# 新增：构造结构化 Cypher 查询函数，基于 species 与 county 参数生成查询语句
+# 新增：构造结构化 Cypher 查询函数，只使用 species 与 county 参数
 def construct_structured_cypher_query(species, county, multi_option=0):
     species_map = {
        "Fish": "Fish_name",
@@ -187,16 +187,17 @@ def construct_structured_cypher_query(species, county, multi_option=0):
        "Birds": "Bird_name"
     }
     node_label = species_map.get(species, "Reptile_name")
+    # 使用 toLower() 和 CONTAINS() 来匹配 county 字段，保证更健壮的查询
     if multi_option == 1:
         cypher_query = f'''
         MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
-        WHERE c.name = '{county}'
+        WHERE toLower(c.name) CONTAINS toLower('{county}')
         RETURN s.name AS species_name, s.multimedia AS multimedia, c.name AS county_name
         '''
     else:
         cypher_query = f'''
         MATCH (s:{node_label})-[:OBSERVED_AT]->(c:County)
-        WHERE c.name = '{county}'
+        WHERE toLower(c.name) CONTAINS toLower('{county}')
         RETURN s, c
         '''
     return cypher_query
@@ -206,7 +207,7 @@ def handle_chat_mode(name, user_input):
     print(name[0])
     result = None
 
-    # 若检测到结构化查询（包含 "Task:" 字样），只取前两个参数
+    # 若检测到结构化查询（包含 "Task:"），只取前两个参数（species 与 county）
     if "Task:" in user_input:
         parts = [part.strip() for part in user_input.split("|")]
         if len(parts) >= 3:
