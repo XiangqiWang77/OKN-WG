@@ -45,30 +45,6 @@ def send_openai_prompt(prompt_text, model_name="gpt-4o", temperature=0.7):
         return f"Request failed: {e}"
 # -----------------------------
 
-# -----------------------------
-# [NEW] Function to convert a raw question into multiple-choice options.
-def convert_question_to_multiple_choice(question):
-    """
-    Uses OpenAI to convert the input question into a multiple-choice question with 4 candidate options.
-    Returns a list of strings, e.g.: ["Option 1", "Option 2", "Option 3", "Option 4"]
-    """
-    prompt = f"""
-Convert the following question into a multiple-choice question by generating 4 candidate options for the user to choose from.
-Return the result in a JSON array format.
-Question: {question}
-Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
-"""
-    response = send_openai_prompt(prompt, model_name="gpt-4", temperature=0.7)
-    try:
-        options = json.loads(response)
-        if not isinstance(options, list):
-            raise ValueError("Result is not a list")
-        return options
-    except Exception as e:
-        st.error(f"Error converting to multiple-choice format, using original question instead. Error: {e}")
-        return [question]
-# -----------------------------
-
 def get_autocomplete_suggestions(question):
     prompt = f"""
 You are given a graph containing information about animals and locations. Complete the user's partially entered question.
@@ -365,10 +341,10 @@ if st.session_state["show_intro"]:
     """)
 
 # -----------------------------
-# User input section with three input modes:
-# "Free Text", "Multiple-Choice Mode", and "Advanced Selection Mode".
+# User input section with two input modes:
+# "Free Text" and "Advanced Selection Mode".
 st.markdown("### Choose your input mode")
-input_mode = st.radio("Select input mode", options=["Free Text", "Multiple-Choice Mode", "Advanced Selection Mode"], key="input_mode")
+input_mode = st.radio("Select input mode", options=["Free Text", "Advanced Selection Mode"], key="input_mode")
 
 mode_info = mode_select()
 
@@ -377,31 +353,18 @@ if query:
     result = handle_chat_mode(mode_info, query)
     st.write(result)
 else:
-    if input_mode == "Multiple-Choice Mode":
-        # Multiple-Choice Mode: enter raw text, generate options, and select one.
-        raw_question = st.text_input("Enter your question (raw text)", key="raw_question")
-        if raw_question:
-            if st.button("Generate Options", key="generate_options"):
-                options = convert_question_to_multiple_choice(raw_question)
-                st.session_state["multiple_choice_options"] = options
-        if "multiple_choice_options" in st.session_state:
-            final_question = st.radio("Select the question you want to ask", st.session_state["multiple_choice_options"], key="final_question")
-            if st.button("Submit Question", key="submit_mc"):
-                result = handle_chat_mode(mode_info, final_question)
-                st.write(result)
-    elif input_mode == "Advanced Selection Mode":
+    if input_mode == "Advanced Selection Mode":
         # Advanced Selection Mode:
         # 1. Select species (Fish, Reptile, Amphibian, Birds)
         # 2. Enter county name (location)
-        # 3. Choose a start and an end date for the time period.
+        # 3. Select a task specific to wildlife management.
         species_options = ["Select a species", "Fish", "Reptile", "Amphibian", "Birds"]
         selected_species = st.selectbox("Select species", species_options, key="species")
         
         county_name = st.text_input("Enter county name", key="county")
         
-        # Use date_input for start and end dates.
-        start_date = st.date_input("Start Date", key="start_date")
-        end_date = st.date_input("End Date", key="end_date")
+        target_options = ["Select a task", "Data Display", "Data Analysis", "Conservation Management"]
+        selected_target = st.selectbox("Select task", target_options, key="target")
         
         if st.button("Submit Advanced Query", key="submit_advanced"):
             query_parts = []
@@ -409,9 +372,8 @@ else:
                 query_parts.append(f"Species: {selected_species}")
             if county_name:
                 query_parts.append(f"County: {county_name}")
-            # Ensure both dates are selected; format them as strings.
-            if start_date and end_date:
-                query_parts.append(f"Time: {start_date} to {end_date}")
+            if selected_target != "Select a task":
+                query_parts.append(f"Task: {selected_target}")
             structured_query = " | ".join(query_parts)
             result = handle_chat_mode(mode_info, structured_query)
             st.write(result)
